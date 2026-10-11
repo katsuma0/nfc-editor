@@ -21,6 +21,7 @@ struct PasswordToolView: View {
     @State private var authLimit = 0
     @State private var currentPassword = Data()
     @State private var passwordToRemove = Data()
+    @State private var showingConfirmation = false
     @State private var alert: AlertItem?
 
     var body: some View {
@@ -45,6 +46,14 @@ struct PasswordToolView: View {
         }
         .navigationTitle("Password")
         .navigationBarTitleDisplayMode(.inline)
+        .confirmationDialog("Set the password?", isPresented: $showingConfirmation, titleVisibility: .visible) {
+            Button("Set password") {
+                setPassword()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text(confirmationMessage)
+        }
         .alertItem($alert)
     }
 
@@ -89,7 +98,7 @@ struct PasswordToolView: View {
 
         Section {
             ScanButton("Set password") {
-                setPassword()
+                confirmSetPassword()
             }
         } footer: {
             Text(attemptsWarning)
@@ -102,6 +111,15 @@ struct PasswordToolView: View {
     private var protectionFooter: String {
         let access = protectReads ? "read or write" : "write"
         return "Pages \(protectFromPage) and up need the password to \(access). Page 4 is the first page of user memory. The configuration pages at the end are always included."
+    }
+
+    private var confirmationMessage: String {
+        var message = "The tag you scan next will need \(password.hexString(separator: " ")) from page \(protectFromPage) on. Write the password down first; it cannot be read back from the tag."
+        if authLimit > 0 {
+            let attempts = authLimit == 1 ? "one wrong attempt" : "\(authLimit) wrong attempts"
+            message += " After \(attempts) the tag stops accepting the password for good."
+        }
+        return message
     }
 
     private var attemptsWarning: String {
@@ -140,19 +158,29 @@ struct PasswordToolView: View {
         Haptics.tap()
     }
 
-    private func setPassword() {
+    private func validateSetInputs() -> Bool {
         guard password.count == 4 else {
-            alert = AlertItem(title: "Check the password", message: "Enter a 4-byte password.")
-            return
+            alert = AlertItem(error: NFCEditorError.invalidInput("Enter a 4-byte password."))
+            return false
         }
         guard pack.count == 2 else {
-            alert = AlertItem(title: "Check the PACK", message: "Enter a 2-byte PACK, for example 00 00.")
-            return
+            alert = AlertItem(error: NFCEditorError.invalidInput("Enter a 2-byte PACK, for example 00 00."))
+            return false
         }
         guard currentPassword.isEmpty || currentPassword.count == 4 else {
-            alert = AlertItem(title: "Check the current password", message: "The current password must be 4 bytes. Leave it empty if the tag has none.")
-            return
+            alert = AlertItem(error: NFCEditorError.invalidInput("The current password must be 4 bytes. Leave it empty if the tag has none."))
+            return false
         }
+        return true
+    }
+
+    private func confirmSetPassword() {
+        guard validateSetInputs() else { return }
+        showingConfirmation = true
+    }
+
+    private func setPassword() {
+        guard validateSetInputs() else { return }
         let config = PasswordConfig(
             password: password,
             pack: pack,
@@ -183,7 +211,7 @@ struct PasswordToolView: View {
 
     private func removePassword() {
         guard passwordToRemove.count == 4 else {
-            alert = AlertItem(title: "Check the password", message: "Enter the current 4-byte password.")
+            alert = AlertItem(error: NFCEditorError.invalidInput("Enter the current 4-byte password."))
             return
         }
         let key = passwordToRemove

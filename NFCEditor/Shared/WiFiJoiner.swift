@@ -15,9 +15,7 @@ enum WiFiJoiner {
         // NEHotspotConfiguration raises an uncatchable exception on a bad passphrase, so check it first.
         let secured = credential.auth != .open && !credential.password.isEmpty
         if secured {
-            let length = credential.password.count
-            let isHexKey = length == 64 && credential.password.isValidHex
-            guard (8...63).contains(length) || isHexKey else {
+            guard (8...63).contains(credential.password.count) else {
                 throw NFCEditorError.failed("The Wi-Fi password must be 8 to 63 characters.")
             }
         }

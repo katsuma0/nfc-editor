@@ -300,17 +300,18 @@ struct WriteDumpView: View {
             do {
                 let data = try Data(contentsOf: url)
                 guard !data.isEmpty else {
-                    alert = AlertItem(title: "Empty file", message: "The file has no bytes.")
+                    alert = AlertItem(error: NFCEditorError.invalidInput("The file has no bytes."))
                     return
                 }
                 importedData = WriteDumpView.flatBytes(from: data)
                 importedName = url.lastPathComponent
                 sourceKind = .file
             } catch {
-                alert = AlertItem(title: "Could not read the file", message: error.localizedDescription)
+                alert = AlertItem(error: NFCEditorError.failed("The file could not be read."))
             }
         case .failure(let error):
-            alert = AlertItem(title: "Could not open the file", message: error.localizedDescription)
+            if NFCEditorError.map(error).isCancellation { return }
+            alert = AlertItem(error: error)
         }
     }
 
@@ -327,11 +328,11 @@ struct WriteDumpView: View {
 
     private func write() {
         guard let dump = currentDump, selectedCount > 0 else {
-            alert = AlertItem(title: "Nothing to write", message: "Choose a source with at least one page.")
+            alert = AlertItem(error: NFCEditorError.invalidInput("Choose a source with at least one page."))
             return
         }
         guard password.isEmpty || password.count == 4 else {
-            alert = AlertItem(title: "Check the password", message: "The password must be 4 bytes. Leave it empty if the tag has none.")
+            alert = AlertItem(error: NFCEditorError.invalidInput("The password must be 4 bytes. Leave it empty if the tag has none."))
             return
         }
         let range = selectedRange

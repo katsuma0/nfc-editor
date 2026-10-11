@@ -165,7 +165,7 @@ struct CopyToolView: View {
         Task { @MainActor in
             do {
                 let info = try await app.nfc.run(
-                    alertMessage: "Hold your iPhone near the tag to copy.",
+                    alertMessage: "Hold your iPhone near the source tag.",
                     successMessage: "Source tag read."
                 ) { session, tag in
                     try await TagOperations.readTag(session, tag, includeDump: true)
@@ -192,7 +192,7 @@ struct CopyToolView: View {
             if canCloneRaw(source) {
                 message += " Turn on raw memory cloning to copy its memory instead."
             }
-            alert = AlertItem(title: "Nothing to copy", message: message)
+            alert = AlertItem(error: NFCEditorError.invalidInput(message))
             return
         }
         writeRecords(source.records)

@@ -127,16 +127,18 @@ struct SavedView: View {
             do {
                 let count = try app.store.importItems(from: url)
                 if count == 0 {
-                    showSoon(AlertItem(title: "Nothing imported", message: "The file does not contain any saved items."))
+                    showSoon(AlertItem(error: NFCEditorError.invalidInput("The file does not contain any saved items.")))
                     return
                 }
                 Haptics.success()
                 showSoon(AlertItem.success(count == 1 ? "Imported 1 item." : "Imported \(count) items."))
             } catch {
+                if NFCEditorError.map(error).isCancellation { return }
                 Haptics.error()
                 showSoon(AlertItem(error: error))
             }
         case .failure(let error):
+            if NFCEditorError.map(error).isCancellation { return }
             showSoon(AlertItem(error: error))
         }
     }

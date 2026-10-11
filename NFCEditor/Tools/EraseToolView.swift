@@ -17,7 +17,7 @@ struct EraseToolView: View {
             } header: {
                 Text("Erase")
             } footer: {
-                Text("Writes an empty message so the tag holds no records. The tag stays formatted and can be written again right away. Zeroing the user memory also wipes leftover bytes from older records, which takes a little longer.")
+                Text("Writes an empty message so the tag holds no records and can be written again right away. Zeroing the user memory also wipes leftover bytes from older records.")
             }
 
             Section {
@@ -55,7 +55,7 @@ struct EraseToolView: View {
         Task { @MainActor in
             do {
                 try await app.nfc.run(
-                    alertMessage: "Hold your iPhone near the tag to erase it.",
+                    alertMessage: "Hold your iPhone near the tag.",
                     successMessage: "Tag erased."
                 ) { session, tag in
                     try await TagOperations.erase(session, tag, zeroUserMemory: zero)

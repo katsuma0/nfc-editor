@@ -38,11 +38,6 @@ struct MemoryEditorView: View {
                     } label: {
                         Label("Copy as hex", systemImage: "doc.on.doc")
                     }
-                    Button {
-                        copyHexDump()
-                    } label: {
-                        Label("Copy hex dump", systemImage: "list.bullet.rectangle")
-                    }
                 } label: {
                     Label("More", systemImage: "ellipsis.circle")
                 }
@@ -151,7 +146,7 @@ struct MemoryEditorView: View {
             return "This chip does not allow single pages to be written. The pages show the NDEF file as read from the tag."
         }
         if dump.chip?.nfcForumType == 5 {
-            return "Tap a block to edit it. Block 0 holds the capability container."
+            return "Tap a page to edit it. Page 0 holds the capability container."
         }
         return "Tap a page to edit it. Pages 0 to 3 hold the serial number, lock bits and capability container. Pages marked in red could not be read."
     }
@@ -194,7 +189,7 @@ struct MemoryEditorView: View {
 
     private func readMemory() {
         guard password.isEmpty || password.count == 4 else {
-            alert = AlertItem(title: "Check the password", message: "The password must be 4 bytes. Leave it empty if the tag has none.")
+            alert = AlertItem(error: NFCEditorError.invalidInput("The password must be 4 bytes. Leave it empty if the tag has none."))
             return
         }
         let key = sessionPassword
@@ -229,12 +224,6 @@ struct MemoryEditorView: View {
     private func copyHex() {
         guard let dump else { return }
         UIPasteboard.general.string = dump.flatBytes.hexString(separator: " ")
-        Haptics.tap()
-    }
-
-    private func copyHexDump() {
-        guard let dump else { return }
-        UIPasteboard.general.string = ByteFormatter.hexDump(dump.flatBytes, pageSize: dump.pageSize)
         Haptics.tap()
     }
 
@@ -393,7 +382,7 @@ private struct PageEditorSheet: View {
 
     private func write() {
         guard bytes.count == pageSize else {
-            alert = AlertItem(title: "Check the bytes", message: "Enter exactly \(ByteFormatter.bytes(pageSize)).")
+            alert = AlertItem(error: NFCEditorError.invalidInput("Enter exactly \(ByteFormatter.bytes(pageSize))."))
             return
         }
         let index = page.index

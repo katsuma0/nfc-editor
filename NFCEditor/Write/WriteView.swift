@@ -138,7 +138,7 @@ struct WriteView: View {
     private var writeSection: some View {
         Section {
             VStack(spacing: 12) {
-                ScanButton("Write") {
+                ScanButton("Write to tag") {
                     startWrite()
                 }
                 .disabled(app.writeQueue.drafts.isEmpty)

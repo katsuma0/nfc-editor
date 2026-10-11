@@ -13,9 +13,20 @@ struct AlertItem: Identifiable, Hashable {
 
     init(error: Error) {
         let mapped = NFCEditorError.map(error)
-        if mapped.isCancellation {
+        switch mapped {
+        case .cancelled:
             title = "Cancelled"
-        } else {
+        case .invalidInput:
+            title = "Check the input"
+        case .notSupportedOnChip, .unsupportedTag:
+            title = "Not supported"
+        case .capacityExceeded:
+            title = "Too much data"
+        case .readOnly:
+            title = "Read only"
+        case .authenticationFailed:
+            title = "Wrong password"
+        default:
             title = "Something went wrong"
         }
         message = mapped.errorDescription ?? "Something went wrong."

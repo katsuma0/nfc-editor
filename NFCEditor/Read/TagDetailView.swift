@@ -101,7 +101,6 @@ struct TagDetailView: View {
                     row("Memory", value: memory, systemImage: "memorychip")
                 }
                 row("Data format", value: dataFormatLine, systemImage: "doc.badge.gearshape")
-                row("NDEF", value: info.ndefStatus.label, systemImage: "doc.text")
                 if let size = info.sizeLine {
                     row("Size", value: size, systemImage: "chart.pie")
                 }
@@ -240,6 +239,7 @@ struct TagDetailView: View {
         "\(info.chip.name) \(info.serialLine)"
     }
 
+    @MainActor
     private var exportText: String {
         app.store.exportText(for: SavedItem.tag(name: defaultSaveName, info: info))
     }

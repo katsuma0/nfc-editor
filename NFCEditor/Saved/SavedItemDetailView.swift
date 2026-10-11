@@ -226,23 +226,6 @@ struct SavedItemDetailView: View {
                     Label("Export memory dump", systemImage: "memorychip")
                 }
             }
-            Button {
-                app.sendToWrite(drafts: item.drafts)
-            } label: {
-                Label("Open in Write tab", systemImage: "square.and.pencil")
-            }
-            .disabled(item.drafts.isEmpty)
-            Button {
-                duplicate(item)
-            } label: {
-                Label("Duplicate", systemImage: "plus.square.on.square")
-            }
-            Divider()
-            Button(role: .destructive) {
-                showingDeleteConfirmation = true
-            } label: {
-                Label("Delete", systemImage: "trash")
-            }
         } label: {
             Label("More", systemImage: "ellipsis.circle")
         }
@@ -390,7 +373,7 @@ struct SavedItemDetailView: View {
             return
         }
         guard !records.isEmpty else {
-            alert = AlertItem(title: "Nothing to write", message: "Add a record first.")
+            alert = AlertItem(error: NFCEditorError.invalidInput("Add a record first."))
             return
         }
         let options = WriteOptions(lockAfterWrite: false, verifyAfterWrite: true, eraseFirst: false)

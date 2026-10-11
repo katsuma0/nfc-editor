@@ -55,7 +55,7 @@ struct LockToolView: View {
         Task { @MainActor in
             do {
                 try await app.nfc.run(
-                    alertMessage: "Hold your iPhone near the tag to lock it.",
+                    alertMessage: "Hold your iPhone near the tag.",
                     successMessage: "Tag locked."
                 ) { session, tag in
                     try await TagOperations.lock(session, tag)

@@ -48,7 +48,7 @@ struct FormatToolView: View {
         Task { @MainActor in
             do {
                 try await app.nfc.run(
-                    alertMessage: "Hold your iPhone near the tag to format it.",
+                    alertMessage: "Hold your iPhone near the tag.",
                     successMessage: "Tag formatted."
                 ) { session, tag in
                     try await TagOperations.format(session, tag)

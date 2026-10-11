@@ -238,11 +238,11 @@ struct AdvancedCommandView: View {
         do {
             commands = try parseCommands()
         } catch {
-            alert = AlertItem(title: "Check the commands", message: NFCEditorError.map(error).errorDescription ?? "Invalid input.")
+            alert = AlertItem(error: error)
             return
         }
         guard !commands.isEmpty else {
-            alert = AlertItem(title: "Nothing to send", message: "Enter at least one command.")
+            alert = AlertItem(error: NFCEditorError.invalidInput("Enter at least one command."))
             return
         }
         // Added last to first so the history reads top to bottom in the order typed.
