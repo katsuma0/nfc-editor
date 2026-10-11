@@ -40,6 +40,10 @@ docs/        App Store listing, privacy policy, review notes, release checklist,
 
 `docs/ARCHITECTURE.md` explains how a scan flows through the layers.
 
+## Tests
+
+`Tests/run.sh` type-checks the NDEF and NFC layers against a small CoreNFC stub, syntax-parses every file, and runs 236 checks on the codec, record builders, parsers, drafts, chip identification and error mapping. It needs only a Swift toolchain, no Xcode, so it runs on Linux too. The SwiftUI layer is only syntax-checked there; Xcode is the type checker for that part.
+
 ## Limits
 
 iOS gives apps no way to read MIFARE Classic data blocks or to emulate a tag, so NFC Editor does not do either. It reports a Classic tag's serial number and stops there. Ultralight C 3DES authentication and DESFire authenticated commands are not implemented; DESFire NDEF reads work.
