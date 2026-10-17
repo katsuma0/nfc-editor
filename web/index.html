@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+  <title>NFC Editor preview</title>
+  <meta name="description" content="Web preview of the NFC Editor iOS app. Reads, writes and edits simulated NFC tags so the screens can be tried in a browser.">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="NFC Editor">
+  <meta name="theme-color" content="#F2F2F7" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="img/apple-touch-icon.png">
+  <link rel="icon" href="img/favicon.png" type="image/png">
+  <link rel="stylesheet" href="app.css">
+</head>
+<body>
+  <div id="device">
+    <div id="tabs"></div>
+    <nav id="tabbar" aria-label="Tabs"></nav>
+  </div>
+  <script src="js/ndef.js"></script>
+  <script src="js/sim.js"></script>
+  <script src="js/store.js"></script>
+  <script src="js/ui.js"></script>
+  <script src="js/screens.js"></script>
+  <script src="js/main.js"></script>
+</body>
+</html>
