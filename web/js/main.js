@@ -37,4 +37,6 @@
     try { if (on && navigator.wakeLock) lock = await navigator.wakeLock.request('screen'); else if (!on && lock) { await lock.release(); lock = null; } } catch (e) { /* not available */ }
   };
   if (STORE.settings.keepScreenAwake) UI.applyWakeLock(true);
+  // Browsers drop the lock whenever the page is hidden, so take it again when the page comes back.
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && STORE.settings.keepScreenAwake) UI.applyWakeLock(true); });
 })();
