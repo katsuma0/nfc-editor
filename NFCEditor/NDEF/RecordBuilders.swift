@@ -116,6 +116,25 @@ enum RecordBuilders {
         return NDEFRecord(tnf: .wellKnown, typeString: "Sp", payload: payload)
     }
 
+    /// Connection Handover 1.3 select record pointing at one carrier record whose ID is `carrierID`.
+    /// Android only starts Bluetooth pairing from a tag when the OOB record sits behind one of these.
+    static func handoverSelect(carrierID: String = "0") -> NDEFRecord {
+        let reference = Array(carrierID.utf8.prefix(255))
+        var alternative = Data()
+        alternative.append(handoverPowerActive)
+        alternative.append(UInt8(reference.count))
+        alternative.append(contentsOf: reference)
+        alternative.append(0x00)
+        let carrierRecord = NDEFRecord(tnf: .wellKnown, typeString: "ac", payload: alternative)
+        var payload = Data([handoverVersion])
+        payload.append(NDEFMessageCodec.encode([carrierRecord]))
+        return NDEFRecord(tnf: .wellKnown, typeString: "Hs", payload: payload)
+    }
+
+    static let handoverVersion: UInt8 = 0x13
+    /// "Active" tells the reader the device is ready to pair now, so it does not wait for the carrier to power up.
+    static let handoverPowerActive: UInt8 = 0x01
+
     /// RFC 3986: only unreserved ASCII characters pass through untouched.
     static func percentEncode(_ s: String) -> String {
         s.addingPercentEncoding(withAllowedCharacters: unreservedCharacters) ?? s

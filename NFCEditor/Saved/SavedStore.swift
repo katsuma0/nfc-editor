@@ -19,13 +19,16 @@ final class SavedStore {
     // MARK: Changes
 
     func add(_ item: SavedItem) {
+        var added = item
+        added.rebuildProfileRecords()
         items.removeAll { $0.id == item.id }
-        items.insert(item, at: 0)
+        items.insert(added, at: 0)
         sortAndSave()
     }
 
     func update(_ item: SavedItem) {
         var updated = item
+        updated.rebuildProfileRecords()
         updated.updatedAt = Date()
         if let index = items.firstIndex(where: { $0.id == item.id }) {
             items[index] = updated
@@ -107,6 +110,8 @@ final class SavedStore {
                 fresh.id = UUID()
                 return fresh
             }
+            // Files from older versions or other tools may carry records that no longer match the drafts.
+            imported[index].rebuildProfileRecords()
         }
         items.append(contentsOf: imported)
         sortAndSave()

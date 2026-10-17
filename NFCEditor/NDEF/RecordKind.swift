@@ -2,7 +2,7 @@ import Foundation
 
 enum RecordKind: String, Codable, CaseIterable, Identifiable {
     case text, url, email, contact, phone, sms, geo, address, wifi, bluetooth, social, app
-    case customURI, customMIME, external, raw, empty, smartPoster, unknown
+    case customURI, customMIME, external, raw, empty, smartPoster, handover, unknown
 
     var id: String { rawValue }
 
@@ -26,6 +26,7 @@ enum RecordKind: String, Codable, CaseIterable, Identifiable {
         case .raw: return "Raw record"
         case .empty: return "Empty"
         case .smartPoster: return "Smart poster"
+        case .handover: return "Handover select"
         case .unknown: return "Unknown"
         }
     }
@@ -50,13 +51,15 @@ enum RecordKind: String, Codable, CaseIterable, Identifiable {
         case .raw: return "number"
         case .empty: return "circle.dashed"
         case .smartPoster: return "doc.richtext"
+        case .handover: return "arrow.triangle.2.circlepath"
         case .unknown: return "questionmark.circle"
         }
     }
 
+    /// Handover select is not listed: a Bluetooth record adds one when its handover switch is on.
     static let writable: [RecordKind] = [
         .text, .url, .email, .contact, .phone, .sms, .geo, .address, .wifi, .bluetooth,
-        .social, .app, .customURI, .customMIME, .external, .raw, .empty
+        .social, .app, .customURI, .customMIME, .external, .raw, .empty, .smartPoster
     ]
 }
 

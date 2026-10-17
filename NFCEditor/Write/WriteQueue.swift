@@ -39,9 +39,9 @@ final class WriteQueue {
         return drafts.reduce(0) { $0 + $1.encodedSize }
     }
 
-    /// Builds every draft in order. Throws the first draft's NFCEditorError.invalidInput.
+    /// Builds every draft in order, a draft with handover on giving two records. Throws the first draft's NFCEditorError.invalidInput.
     func builtRecords() throws -> [NDEFRecord] {
-        try drafts.map { try $0.build() }
+        try drafts.flatMap { try RecordDraft.buildAll($0) }
     }
 
     func replace(with drafts: [RecordDraft]) {
@@ -49,7 +49,7 @@ final class WriteQueue {
     }
 
     func replace(with records: [NDEFRecord]) {
-        drafts = records.map { RecordDraft.from(record: $0) }
+        drafts = RecordDraft.from(records: records)
     }
 
     func add(_ draft: RecordDraft) {

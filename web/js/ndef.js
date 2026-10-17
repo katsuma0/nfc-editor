@@ -172,6 +172,13 @@ const NDEF = (() => {
       if (title) inner.push(B.text(title, lang));
       return record(TNF.wellKnown, 'Sp', encode(inner));
     },
+    // Connection handover select: version 0x13 then an inner message with one alternative carrier record
+    // ("ac") that points at the carrier record carrying the real pairing data by its identifier.
+    handoverSelect(carrierID = '0') {
+      const idBytes = utf8(carrierID);
+      const ac = record(TNF.wellKnown, 'ac', concat(new Uint8Array([0x01, idBytes.length]), idBytes, new Uint8Array([0x00])));
+      return record(TNF.wellKnown, 'Hs', concat(new Uint8Array([0x13]), encode([ac])));
+    },
   };
 
   // Wi-Fi (WSC credential)
@@ -317,11 +324,12 @@ const NDEF = (() => {
     ['external', 'External type', 'box', 'A domain:type record with data'],
     ['raw', 'Raw record', 'number', 'Type name format, type and payload in hex'],
     ['empty', 'Empty', 'dashedcircle', 'An empty record'],
-    ['smartPoster', 'Smart poster', 'richtext', ''],
+    ['smartPoster', 'Smart poster', 'richtext', 'A URL with a title, like a poster'],
+    ['handover', 'Handover select', 'bluetooth', 'Bluetooth pairing, as Android expects'],
     ['unknown', 'Unknown', 'question', ''],
   ];
   const kindInfo = (id) => { const k = KINDS.find((x) => x[0] === id) || KINDS[KINDS.length - 1]; return { id: k[0], name: k[1], icon: k[2], blurb: k[3] }; };
-  const WRITABLE = KINDS.slice(0, 17).map((k) => k[0]);
+  const WRITABLE = KINDS.filter((k) => k[0] !== 'handover' && k[0] !== 'unknown').map((k) => k[0]);
 
   // Parsing for display
   function parseText(r) {
@@ -352,6 +360,7 @@ const NDEF = (() => {
     const base = (kind, detail, fields = [], actions = [], title) => ({ kind, title: title || kindInfo(kind).name, detail, fields, actions, icon: kindInfo(kind).icon });
     const withCopy = (s) => { if (s.detail && !s.actions.some((a) => a.type === 'copy')) s.actions.push({ type: 'copy', value: s.detail, label: 'Copy' }); return s; };
     if (r.tnf === TNF.empty) return base('empty', 'No content');
+    if (r.tnf === TNF.wellKnown && typeString(r) === 'Hs') return base('handover', 'Bluetooth pairing', [{ label: 'Record', value: 'Handover select' }]);
     const t = parseText(r);
     if (t) return withCopy(base('text', t.text, [{ label: 'Language', value: t.language || 'none' }]));
     const sp = parseSmartPoster(r);
@@ -433,7 +442,7 @@ const NDEF = (() => {
   // Drafts (the editable form model)
   const DEFAULTS = {
     text: { language: 'en' }, smartPoster: { language: 'en' }, geo: { geoFormat: 'geo' }, address: { addressFormat: 'apple' },
-    wifi: { auth: 'wpa2PSK', encryption: 'aes', hidden: 'false' }, social: { platform: 'instagram' },
+    wifi: { auth: 'wpa2PSK', encryption: 'aes', hidden: 'false' }, bluetooth: { handover: 'false' }, social: { platform: 'instagram' },
     customMIME: { payloadIsHex: 'false' }, external: { payloadIsHex: 'false' }, raw: { tnf: '1', payloadIsHex: 'true' }, unknown: { tnf: '1', payloadIsHex: 'true' },
   };
   const draft = (kind, fields = {}) => ({ id: crypto.randomUUID ? crypto.randomUUID() : String(Math.random()), kind, fields: Object.assign({}, DEFAULTS[kind] || {}, fields) });
@@ -486,6 +495,16 @@ const NDEF = (() => {
       default: return B.empty();
     }
   }
+  // One draft can expand into more than one record on the tag. A bluetooth draft with handover on
+  // becomes a handover select plus the OOB carrier record (identifier "0"), which is what Android pairs with.
+  function buildAll(d) {
+    if (d.kind === 'bluetooth' && f(d, 'handover') === 'true') {
+      const oob = build(d);
+      oob.id = utf8('0');
+      return [B.handoverSelect('0'), oob];
+    }
+    return [build(d)];
+  }
   function fromRecord(r) {
     const s = parse(r);
     const rawDraft = () => draft('raw', { tnf: String(r.tnf), type: hex(r.type, ' '), identifier: hex(r.id, ' '), payloadHex: hex(r.payload, ' '), payloadIsHex: 'true' });
@@ -529,11 +548,11 @@ const NDEF = (() => {
       default: return '';
     }
   }
-  const draftSize = (d) => { try { return encodedSize(build(d)); } catch (e) { return 0; } };
+  const draftSize = (d) => { try { return buildAll(d).reduce((n, r) => n + encodedSize(r), 0); } catch (e) { return 0; } };
 
   return { TNF, TNF_LABEL, URI_PREFIXES, utf8, text, hex, fromHex, normalizeHex, isValidHex, concat, equal, ascii, percentEncode,
     record, typeString, encodedSize, encode, decode, byteCount, tlv, messageFromTLV, abbreviate, expand, build: B,
     encodeWifi, decodeWifi, WIFI_AUTH, WIFI_ENC, encodeBluetooth, decodeBluetooth, isValidMAC, normalizeMAC, encodeVCard, decodeVCard, VCARD_FIELDS, fullName,
     SOCIAL, socialURL, detectSocial, KINDS, kindInfo, WRITABLE, parseText, parseURI, parseSmartPoster, parse,
-    draft, validate, buildDraft: build, fromRecord, summary, draftSize };
+    draft, validate, buildDraft: build, buildAll, fromRecord, summary, draftSize };
 })();

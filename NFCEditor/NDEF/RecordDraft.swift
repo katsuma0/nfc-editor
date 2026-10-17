@@ -10,6 +10,7 @@ enum DraftKey {
     static let address = "address", addressFormat = "addressFormat"
     static let ssid = "ssid", password = "password", auth = "auth", encryption = "encryption", hidden = "hidden"
     static let mac = "mac", name = "name"
+    static let handover = "handover"                              // bluetooth: "true" wraps the record in a Handover Select
     static let platform = "platform", handle = "handle"
     static let package = "package"
     static let firstName = "firstName", lastName = "lastName", organization = "organization", title = "title", website = "website", note = "note"
@@ -80,7 +81,7 @@ struct RecordDraft: Codable, Hashable, Identifiable {
             let domain = value(DraftKey.domain)
             let type = value(DraftKey.externalType)
             line = (domain.isEmpty && type.isEmpty) ? "" : "\(domain):\(type)"
-        case .raw, .unknown:
+        case .raw, .handover, .unknown:
             let label = RecordDraft.tnfValue(self[DraftKey.tnf])?.label ?? "Raw"
             let count = rawPayload.count
             line = "\(label), \(count) \(count == 1 ? "byte" : "bytes")"
@@ -102,10 +103,20 @@ struct RecordDraft: Codable, Hashable, Identifiable {
             }
             return nil
 
-        case .url, .smartPoster:
+        case .url:
             let url = value(DraftKey.url)
             if url.isEmpty { return "Enter a URL." }
             if RecordDraft.containsWhitespace(url) { return "The URL cannot contain spaces." }
+            return nil
+
+        case .smartPoster:
+            let url = value(DraftKey.url)
+            if url.isEmpty { return "Enter a URL." }
+            if RecordDraft.containsWhitespace(url) { return "The URL cannot contain spaces." }
+            let language = value(DraftKey.language)
+            if !value(DraftKey.text).isEmpty, !language.isEmpty, !RecordDraft.isValidLanguage(language) {
+                return "Enter a valid language code, for example en."
+            }
             return nil
 
         case .customURI:
@@ -196,7 +207,7 @@ struct RecordDraft: Codable, Hashable, Identifiable {
             if domain.utf8.count + 1 + type.utf8.count > 255 { return "The domain and type name together can be at most 254 bytes." }
             return payloadHexMessage
 
-        case .raw, .unknown:
+        case .raw, .handover, .unknown:
             guard RecordDraft.tnfValue(self[DraftKey.tnf]) != nil else { return "Choose a type name format." }
             if !RecordDraft.isValidHexOrEmpty(self[DraftKey.type]) { return "Enter the type as hex bytes." }
             if (RecordDraft.hexData(self[DraftKey.type]) ?? Data()).count > 255 { return "The type can be at most 255 bytes." }
@@ -292,7 +303,7 @@ struct RecordDraft: Codable, Hashable, Identifiable {
         case .external:
             return RecordBuilders.external(domain: value(DraftKey.domain), type: value(DraftKey.externalType), payload: payloadData)
 
-        case .raw, .unknown:
+        case .raw, .handover, .unknown:
             let tnf = RecordDraft.tnfValue(self[DraftKey.tnf]) ?? TypeNameFormat.wellKnown
             return RecordBuilders.raw(
                 tnf: tnf,
@@ -315,11 +326,40 @@ struct RecordDraft: Codable, Hashable, Identifiable {
         }
     }
 
+    /// Every record this draft writes, in order. A Bluetooth draft with handover on becomes a Handover Select
+    /// followed by the pairing record it points at, the pair Android needs before it offers to pair.
+    static func buildAll(_ draft: RecordDraft) throws -> [NDEFRecord] {
+        let record = try draft.build()
+        guard draft.kind == .bluetooth, draft.isTrue(DraftKey.handover) else { return [record] }
+        var carrier = record
+        carrier.identifier = Data(handoverCarrierID.utf8)
+        return [RecordBuilders.handoverSelect(carrierID: handoverCarrierID), carrier]
+    }
+
+    /// Covers every record buildAll makes, so a handover draft counts its select record too.
     var encodedSize: Int {
-        (try? build())?.encodedSize ?? 0
+        guard let records = try? RecordDraft.buildAll(self) else { return 0 }
+        return records.reduce(0) { $0 + $1.encodedSize }
     }
 
     // MARK: Reverse mapping
+
+    /// Drafts for a whole message read from a tag. A Handover Select followed by the Bluetooth record it points at
+    /// comes back as one Bluetooth draft with handover on, so writing the drafts again keeps the pair intact.
+    static func from(records: [NDEFRecord]) -> [RecordDraft] {
+        var drafts: [RecordDraft] = []
+        var index = 0
+        while index < records.count {
+            if index + 1 < records.count, let paired = handoverDraft(select: records[index], carrier: records[index + 1]) {
+                drafts.append(paired)
+                index += 2
+            } else {
+                drafts.append(from(record: records[index]))
+                index += 1
+            }
+        }
+        return drafts
+    }
 
     static func from(record: NDEFRecord) -> RecordDraft {
         let parsed = RecordParsers.parse(record)
@@ -459,7 +499,7 @@ struct RecordDraft: Codable, Hashable, Identifiable {
                 DraftKey.language: language,
             ])
 
-        case .raw, .unknown:
+        case .raw, .handover, .unknown:
             return rawDraft(record)
         }
     }
@@ -482,6 +522,7 @@ private struct Coordinates {
 }
 
 private extension RecordDraft {
+    static let handoverCarrierID = "0"
     static let geoFormats: Set<String> = ["geo", "apple", "google"]
     static let addressFormats: Set<String> = ["apple", "google", "geo"]
     static let smsSchemes: Set<String> = ["sms", "smsto", "mms", "mmsto"]
@@ -506,11 +547,13 @@ private extension RecordDraft {
             return [DraftKey.platform: SocialPlatform.instagram.rawValue]
         case .customMIME, .external:
             return [DraftKey.payloadIsHex: "false"]
-        case .raw, .unknown:
+        case .raw, .handover, .unknown:
             return [DraftKey.tnf: "1", DraftKey.payloadIsHex: "true"]
         case .smartPoster:
             return [DraftKey.language: "en"]
-        case .url, .email, .contact, .phone, .sms, .bluetooth, .app, .customURI, .empty:
+        case .bluetooth:
+            return [DraftKey.handover: "false"]
+        case .url, .email, .contact, .phone, .sms, .app, .customURI, .empty:
             return [:]
         }
     }
@@ -809,6 +852,18 @@ private extension RecordDraft {
         var fields = payloadFields(for: record.payload)
         fields[DraftKey.mime] = record.typeString
         return RecordDraft(kind: .customMIME, fields: fields)
+    }
+
+    /// Collapses a select and carrier pair only when rebuilding the draft gives back exactly the bytes that were read.
+    static func handoverDraft(select: NDEFRecord, carrier: NDEFRecord) -> RecordDraft? {
+        guard select.tnf == .wellKnown, select.typeString == "Hs",
+              carrier.identifier == Data(handoverCarrierID.utf8) else { return nil }
+        var draft = from(record: carrier)
+        guard draft.kind == .bluetooth else { return nil }
+        draft[DraftKey.handover] = "true"
+        guard let rebuilt = try? buildAll(draft),
+              NDEFMessageCodec.encode(rebuilt) == NDEFMessageCodec.encode([select, carrier]) else { return nil }
+        return draft
     }
 
     static func rawDraft(_ record: NDEFRecord) -> RecordDraft {

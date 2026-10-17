@@ -251,7 +251,7 @@ const SCREENS = (() => {
             case 'geo': return [f('latitude', 'Latitude', { placeholder: '43.8561', inputmode: 'decimal' }), f('longitude', 'Longitude', { placeholder: '-79.3370', inputmode: 'decimal' }), sel('geoFormat', 'Format', [{ value: 'geo', label: 'geo: URI' }, { value: 'apple', label: 'Apple Maps link' }, { value: 'google', label: 'Google Maps link' }])];
             case 'address': return [f('address', null, { placeholder: 'Street, city, province', multiline: true, autocap: 'words' }), sel('addressFormat', 'Opens in', [{ value: 'apple', label: 'Apple Maps' }, { value: 'google', label: 'Google Maps' }, { value: 'geo', label: 'geo: URI' }])];
             case 'wifi': return [f('ssid', 'Network', { placeholder: 'Name' }), f('password', 'Password', { placeholder: '8 characters or more' }), sel('auth', 'Security', NDEF.WIFI_AUTH.map((a) => ({ value: a[0], label: a[1] }))), sel('encryption', 'Encryption', NDEF.WIFI_ENC.map((a) => ({ value: a[0], label: a[1] }))), tog('hidden', 'Hidden network')];
-            case 'bluetooth': return [f('mac', 'Address', { placeholder: 'AA:BB:CC:DD:EE:FF', mono: true, autocap: 'characters' }), f('name', 'Name', { placeholder: 'Optional', autocap: 'words' })];
+            case 'bluetooth': return [f('mac', 'Address', { placeholder: 'AA:BB:CC:DD:EE:FF', mono: true, autocap: 'characters' }), f('name', 'Name', { placeholder: 'Optional', autocap: 'words' }), tog('handover', 'Wrap in Handover Select', 'Android pairs from a handover select plus the pairing record.')];
             case 'social': return [sel('platform', 'Platform', NDEF.SOCIAL.map((s) => ({ value: s[0], label: s[1] }))), f('handle', 'Username', { placeholder: 'without the @' })];
             case 'app': return [f('package', 'Package', { placeholder: 'com.example.app' })];
             case 'customMIME': return [f('mime', 'MIME type', { placeholder: 'text/plain' }), ...payloadRows()];
@@ -575,7 +575,7 @@ const SCREENS = (() => {
         const info = STORE.itemInfo(it);
         if (info) wrap.append(section({ header: 'Tag', rows: [row({ icon: 'cpu', iconBg: '#636366', title: SIM.info.chipLine(info), subtitle: SIM.info.serialLine(info), subtitleMono: true, caption: `Scanned ${UI.dateLabel(info.scannedAt)}`, onClick: () => ctx.nav.push(tagDetailScreen(info)) })] }));
         wrap.append(bigButton({ title: 'Write to tag', icon: 'wave', disabled: !records.length, onClick: async () => {
-          let recs; try { recs = it.kind === 'profile' ? it.drafts.map(NDEF.buildDraft) : records; } catch (e) { return UI.alert({ title: 'Check the input', message: e.message }); }
+          let recs; try { recs = it.kind === 'profile' ? it.drafts.flatMap(NDEF.buildAll) : records; } catch (e) { return UI.alert({ title: 'Check the input', message: e.message }); }
           if (!recs.length) return UI.alert({ title: 'Check the input', message: 'Add a record first.' });
           try { const r = await UI.nfc.run({ alertMessage: HOLD, successMessage: 'Written.', body: writeBody(recs, { verifyAfterWrite: true }) }); UI.success(writeSuccess(r)); } catch (e) { fail(e); }
         } }));

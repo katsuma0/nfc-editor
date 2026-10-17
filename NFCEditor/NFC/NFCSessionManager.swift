@@ -284,6 +284,14 @@ private final class BatchRun: NSObject, NFCTagReaderSessionDelegate, @unchecked 
         return closed
     }
 
+    /// A synchronous mutation so the lock is never taken directly inside an async context.
+    private func recordHandled(identifier: Data?) {
+        lock.lock()
+        handled += 1
+        lastHandledIdentifier = identifier
+        lock.unlock()
+    }
+
     /// Serial number of the tag, used to skip the tag that was just handled while it is still in the field.
     private static func identifier(of tag: NFCTag) -> Data? {
         let identifier: Data
@@ -368,10 +376,7 @@ private final class BatchRun: NSObject, NFCTagReaderSessionDelegate, @unchecked 
             do {
                 try await session.connect(to: tag)
                 let message = try await perTag(session, tag, index)
-                self.lock.lock()
-                self.handled += 1
-                self.lastHandledIdentifier = identifier
-                self.lock.unlock()
+                self.recordHandled(identifier: identifier)
                 session.alertMessage = message
             } catch {
                 let mapped = NFCEditorError.map(error)

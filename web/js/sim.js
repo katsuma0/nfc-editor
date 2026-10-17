@@ -41,20 +41,55 @@ const SIM = (() => {
     ntag215: type2('NTAG215', 'ntag21x', { totalPages: 135, userRange: [4, 129], userMemoryBytes: 504, configPage: 0x83, dynamicLockPage: 0x82, cc: [0xE1, 0x10, 0x3E, 0x00], supportsPassword: true, supportsCounter: true, counterCount: 1, supportsSignature: true, version: '0004040201001103' }),
     ntag216: type2('NTAG216', 'ntag21x', { totalPages: 231, userRange: [4, 225], userMemoryBytes: 888, configPage: 0xE3, dynamicLockPage: 0xE2, cc: [0xE1, 0x10, 0x6D, 0x00], supportsPassword: true, supportsCounter: true, counterCount: 1, supportsSignature: true, version: '0004040201001303' }),
     ul21: type2('MIFARE Ultralight EV1 (MF0UL21)', 'ultralightEV1', { totalPages: 41, userRange: [4, 35], userMemoryBytes: 128, configPage: 0x25, dynamicLockPage: 0x24, cc: [0xE1, 0x10, 0x10, 0x00], supportsPassword: true, supportsCounter: true, counterCount: 3, supportsSignature: true, version: '0004030101000E03' }),
+    ntag213tt: type2('NTAG213 TT', 'ntag21x', { totalPages: 45, userRange: [4, 39], userMemoryBytes: 144, configPage: 0x29, dynamicLockPage: 0x28, cc: [0xE1, 0x10, 0x12, 0x00], supportsPassword: true, supportsCounter: true, counterCount: 1, supportsSignature: true, version: '0004040203000F03', tamper: true }),
+    ultralightC: type2('MIFARE Ultralight C', 'ultralightC', { totalPages: 48, userRange: [4, 39], userMemoryBytes: 144, cc: [0xE1, 0x10, 0x12, 0x00], supportsRawPages: true, ulcAuth0Page: 0x2A, ulcAuth1Page: 0x2B, ulcKeyPages: [0x2C, 0x2D, 0x2E, 0x2F], version: null }),
+    magicNtag216: type2('Magic NTAG216 (writable serial)', 'ntag21x', { totalPages: 231, userRange: [4, 225], userMemoryBytes: 888, configPage: 0xE3, dynamicLockPage: 0xE2, cc: [0xE1, 0x10, 0x6D, 0x00], supportsPassword: true, supportsCounter: true, counterCount: 1, supportsSignature: true, version: '0004040201001303', magicSerial: true }),
     ntag203: type2('NTAG203', 'ntag203', { totalPages: 42, userRange: [4, 39], userMemoryBytes: 144, dynamicLockPage: 0x28, cc: [0xE1, 0x10, 0x12, 0x00], version: null }),
     classic: type2('Unsupported MIFARE tag', 'mifareClassic', { manufacturer: 'Unknown', totalPages: null, userRange: null, userMemoryBytes: null, supportsRawPages: false, atqa: 0x0004, sak: 0x08, notes: 'iOS cannot read this tag. MIFARE Classic is not supported.', version: null }),
     desfire: { name: 'MIFARE DESFire EV1 4K', manufacturer: 'NXP', family: 'desfire', nfcForumType: 4, isoStandard: 'ISO 14443-4A', pageSize: 1, totalPages: null, userRange: null, userMemoryBytes: 4096, supportsPassword: false, supportsCounter: false, counterCount: 0, supportsSignature: false, supportsRawPages: false, atqa: 0x0344, sak: 0x20, notes: null, cc: null, configPage: null, dynamicLockPage: null },
+    desfireEV2: { name: 'MIFARE DESFire EV2 2K', manufacturer: 'NXP', family: 'desfire', nfcForumType: 4, isoStandard: 'ISO 14443-4A', pageSize: 1, totalPages: null, userRange: null, userMemoryBytes: 2048, supportsPassword: false, supportsCounter: false, counterCount: 0, supportsSignature: false, supportsRawPages: false, atqa: 0x0344, sak: 0x20, notes: null, cc: null, configPage: null, dynamicLockPage: null },
     slix: { name: 'ICODE SLIX', manufacturer: 'NXP', family: 'icodeSLIX', nfcForumType: 5, isoStandard: 'ISO 15693', pageSize: 4, totalPages: 28, userRange: [0, 27], userMemoryBytes: 112, supportsPassword: false, supportsCounter: false, counterCount: 0, supportsSignature: false, supportsRawPages: true, atqa: null, sak: null, notes: null, cc: null, configPage: null, dynamicLockPage: null },
+    st25tv: { name: 'ST25TV02K', manufacturer: 'STMicroelectronics', family: 'st25tv', nfcForumType: 5, isoStandard: 'ISO 15693', pageSize: 4, totalPages: 64, userRange: [0, 63], userMemoryBytes: 256, supportsPassword: false, supportsCounter: false, counterCount: 0, supportsSignature: false, supportsRawPages: true, atqa: null, sak: null, notes: null, cc: null, configPage: null, dynamicLockPage: null },
     felica: { name: 'FeliCa (NDEF)', manufacturer: 'Sony', family: 'feliCa', nfcForumType: 3, isoStandard: 'ISO 18092 (JIS X 6319-4)', pageSize: 16, totalPages: null, userRange: null, userMemoryBytes: null, supportsPassword: false, supportsCounter: false, counterCount: 0, supportsSignature: false, supportsRawPages: false, atqa: null, sak: null, notes: null, cc: null, configPage: null, dynamicLockPage: null },
   };
   const chipPages = (c) => ({ cfg0: c.configPage, cfg1: c.configPage == null ? null : c.configPage + 1, pwd: c.configPage == null ? null : c.configPage + 2, pack: c.configPage == null ? null : c.configPage + 3 });
   const isNTAG21x = (c) => c.family === 'ntag21x';
+  const isUlC = (c) => c.family === 'ultralightC';
+  const hex6 = (n) => (n & 0xFFFFFF).toString(16).toUpperCase().padStart(6, '0');
+  // Dynamic lock bits: how many user pages one lock bit covers, where they start and how many bits there are.
+  function dynamicLayout(spec) {
+    if (spec.dynamicLockPage == null || !spec.userRange) return null;
+    const lastUser = spec.userRange[1];
+    const pagesPerBit = spec.totalPages >= 128 ? 16 : 2;
+    const bitCount = Math.ceil((lastUser - 15) / pagesPerBit);
+    return { pagesPerBit, firstPage: 16, bitCount };
+  }
+  // Lock state as the groups the Lock pages tool shows: static pages 3..15 one per group, then the dynamic groups.
+  function lockGroups(tag) {
+    const spec = tag.spec, out = [];
+    if (!spec.userRange) return out;
+    const b2 = tag.pages[2][2], b3 = tag.pages[2][3];
+    const staticLocked = (p) => (p === 3 ? (b2 & 0x08) : p <= 7 ? (b2 & (1 << p)) : (b3 & (1 << (p - 8))));
+    for (let p = 3; p <= 15 && p <= spec.userRange[1]; p++) out.push({ from: p, to: p, locked: !!staticLocked(p), lockable: true });
+    const layout = dynamicLayout(spec);
+    if (layout) {
+      const d = tag.pages[spec.dynamicLockPage];
+      for (let g = 0; g < layout.bitCount; g++) {
+        const from = layout.firstPage + g * layout.pagesPerBit;
+        const to = Math.min(from + layout.pagesPerBit - 1, spec.userRange[1]);
+        out.push({ from, to, locked: !!(d[Math.floor(g / 8)] & (1 << (g % 8))), lockable: true });
+      }
+    }
+    return out;
+  }
 
   // Type 2 emulator
   class Type2Tag {
     constructor(id, name, chipKey, uidHex, setup) {
       this.id = id; this.name = name; this.kind = 'type2'; this.chipKey = chipKey; this.spec = CHIPS[chipKey];
       this.uid = FH(uidHex);
+      this.genuine = true; // the originality signature matches NXP's key; a clone sets this false
+      this.tamperOpen = false; // NTAG213TT tamper loop, closed from the factory
       this.factory();
       if (setup) setup(this);
       this.authenticated = false;
@@ -74,6 +109,11 @@ const SIM = (() => {
         this.pages[p.pwd] = U8(0xFF, 0xFF, 0xFF, 0xFF);
         this.pages[p.pack] = U8(0x00, 0x00, 0x00, 0x00);
       }
+      if (isUlC(c)) {
+        this.ulcKey = NDEF.utf8('BREAKMEIFYOUCAN!'); // 16 byte 3DES key, kept off the page map like the real chip
+        this.pages[c.ulcAuth0Page] = U8(0x30, 0x00, 0x00, 0x00); // AUTH0 = 0x30 means no page is protected
+        this.pages[c.ulcAuth1Page] = U8(0x00, 0x00, 0x00, 0x00); // AUTH1 bit 0: 0 protects reads and writes, 1 writes only
+      }
       this.password = U8(0xFF, 0xFF, 0xFF, 0xFF);
       this.pack = U8(0x00, 0x00);
       this.counter = 0;
@@ -82,21 +122,49 @@ const SIM = (() => {
       this.version = c.version ? FH(c.version) : null;
     }
     get cfg() { return chipPages(this.spec); }
-    get auth0() { return this.cfg.cfg0 == null ? 0xFF : this.pages[this.cfg.cfg0][3]; }
+    get isUlC() { return isUlC(this.spec); }
+    get auth0() {
+      if (this.isUlC) return this.pages[this.spec.ulcAuth0Page][0];
+      return this.cfg.cfg0 == null ? 0xFF : this.pages[this.cfg.cfg0][3];
+    }
+    get ulcWriteOnly() { return this.isUlC && (this.pages[this.spec.ulcAuth1Page][0] & 0x01) === 0x01; }
     get access() { return this.cfg.cfg1 == null ? 0 : this.pages[this.cfg.cfg1][0]; }
-    get prot() { return (this.access & 0x80) !== 0; }
+    get prot() { return this.isUlC ? true : (this.access & 0x80) !== 0; }
+    get cfgLocked() { return (this.access & 0x40) !== 0; }
+    get counterPwdProt() { return (this.access & 0x08) !== 0; }
     get counterEnabled() { return isNTAG21x(this.spec) ? (this.access & 0x10) !== 0 : this.spec.supportsCounter; }
     get authLimit() { return this.access & 0x07; }
     get staticLocked() { return this.pages[2][2] === 0xFF && this.pages[2][3] === 0xFF; }
     get readOnly() { return (this.pages[3][3] & 0x0F) === 0x0F || this.staticLocked; }
     lockedPage(page) {
-      if (page < 3) return false;
-      if (this.staticLocked && page <= 15) return true;
-      if (this.spec.dynamicLockPage != null && page >= 16 && page <= this.spec.userRange[1]) { const d = this.pages[this.spec.dynamicLockPage]; return d[0] === 0xFF && d[1] === 0xFF; }
+      if (page < 3 || !this.spec.userRange) return false;
+      if (page <= 15) {
+        const b2 = this.pages[2][2], b3 = this.pages[2][3];
+        if (page === 3) return !!(b2 & 0x08);
+        if (page <= 7) return !!(b2 & (1 << page));
+        return !!(b3 & (1 << (page - 8)));
+      }
+      const layout = dynamicLayout(this.spec);
+      if (layout && page <= this.spec.userRange[1]) { const g = Math.floor((page - layout.firstPage) / layout.pagesPerBit); const d = this.pages[this.spec.dynamicLockPage]; return !!(d[Math.floor(g / 8)] & (1 << (g % 8))); }
       return false;
     }
-    protectedRead(page) { return page >= this.auth0 && this.prot && !this.authenticated; }
+    // ICODE-style privacy and NXP mirror both live in the config, so protection for Ultralight C uses AUTH0/AUTH1 directly.
+    protectedRead(page) {
+      if (this.isUlC) return page >= this.auth0 && !this.ulcWriteOnly && !this.authenticated;
+      return page >= this.auth0 && this.prot && !this.authenticated;
+    }
     protectedWrite(page) { return page >= this.auth0 && !this.authenticated; }
+    // NTAG21x UID and counter mirror. When on, reads of the user pages show the serial number and scan count as ASCII.
+    mirror() {
+      if (!isNTAG21x(this.spec) || this.cfg.cfg0 == null) return null;
+      const cfg0 = this.pages[this.cfg.cfg0];
+      const conf = (cfg0[0] >> 6) & 3;
+      if (conf === 0) return null;
+      const kind = ['none', 'uid', 'counter', 'both'][conf];
+      const byte = (cfg0[0] >> 4) & 3, page = cfg0[2];
+      const ascii = kind === 'uid' ? H(this.uid) : kind === 'counter' ? hex6(this.counter) : H(this.uid) + 'x' + hex6(this.counter);
+      return { kind, page, byte, ascii };
+    }
     sessionStart() {
       this.authenticated = false;
       if (this.counterEnabled && this.spec.supportsCounter) this.counter = (this.counter + 1) & 0xFFFFFF;
@@ -105,6 +173,14 @@ const SIM = (() => {
       if (p >= this.spec.totalPages || p < 0) throw E.nak(0x00);
       if (this.protectedRead(p)) throw E.nak(0x04);
       if (p === this.cfg.pwd || p === this.cfg.pack) return U8(0, 0, 0, 0);
+      if (this.isUlC && this.spec.ulcKeyPages.indexOf(p) >= 0) return U8(0, 0, 0, 0); // the 3DES key never reads back
+      const m = this.mirror();
+      if (m && m.ascii.length) {
+        const start = m.page * 4 + m.byte;
+        const out = new Uint8Array(this.pages[p]);
+        for (let i = 0; i < 4; i++) { const abs = p * 4 + i; if (abs >= start && abs < start + m.ascii.length) out[i] = m.ascii.charCodeAt(abs - start); }
+        return out;
+      }
       return this.pages[p];
     }
     command(bytes) {
@@ -121,8 +197,9 @@ const SIM = (() => {
       }
       if (cmd === 0xA2) {
         const p = bytes[1]; const data = bytes.slice(2, 6); if (data.length !== 4 || p >= t) throw E.nak(0x00);
-        if (p <= 1) throw E.nak(0x00);
+        if (p <= 1 && !this.spec.magicSerial) throw E.nak(0x00); // real chips refuse the serial number pages; magic clones accept them
         if (this.lockedPage(p) || (this.readOnly && p >= 4 && p <= this.spec.userRange[1])) throw E.nak(0x00);
+        if (this.cfgLocked && (p === this.cfg.cfg0 || p === this.cfg.cfg1 || p === this.cfg.pwd || p === this.cfg.pack)) throw E.nak(0x00);
         if (this.protectedWrite(p)) throw E.nak(0x04);
         if (p === 2) { this.pages[2] = U8(this.pages[2][0], this.pages[2][1], this.pages[2][2] | data[2], this.pages[2][3] | data[3]); return U8(0x0A); }
         if (p === 3) { this.pages[3] = U8(...[0, 1, 2, 3].map((i) => this.pages[3][i] | data[i])); return U8(0x0A); }
@@ -144,6 +221,7 @@ const SIM = (() => {
         const a = bytes[1];
         if (!this.spec.supportsCounter) throw E.nak(0x00);
         if (isNTAG21x(this.spec) && (a !== 2 || !this.counterEnabled)) throw E.nak(0x00);
+        if (isNTAG21x(this.spec) && this.counterPwdProt && !this.authenticated) throw E.nak(0x04); // NFC_CNT_PWD_PROT
         if (!isNTAG21x(this.spec) && a > 2) throw E.nak(0x00);
         const v = isNTAG21x(this.spec) ? this.counter : this.counter + a;
         return U8(v & 255, (v >> 8) & 255, (v >> 16) & 255);
@@ -182,8 +260,8 @@ const SIM = (() => {
       this.pages[2] = U8(this.pages[2][0], this.pages[2][1], 0xFF, 0xFF);
       if (this.spec.dynamicLockPage != null) this.pages[this.spec.dynamicLockPage] = U8(0xFF, 0xFF, 0xFF, this.pages[this.spec.dynamicLockPage][3]);
     }
-    serialize() { return { pages: this.pages.map((p) => H(p)), password: H(this.password), pack: H(this.pack), counter: this.counter, failedAuth: this.failedAuth }; }
-    restore(s) { if (!s || !s.pages || s.pages.length !== this.pages.length) return; this.pages = s.pages.map(FH); this.password = FH(s.password); this.pack = FH(s.pack); this.counter = s.counter || 0; this.failedAuth = s.failedAuth || 0; }
+    serialize() { return { pages: this.pages.map((p) => H(p)), password: H(this.password), pack: H(this.pack), counter: this.counter, failedAuth: this.failedAuth, ulcKey: this.ulcKey ? H(this.ulcKey) : null, tamperOpen: this.tamperOpen }; }
+    restore(s) { if (!s || !s.pages || s.pages.length !== this.pages.length) return; this.pages = s.pages.map(FH); this.password = FH(s.password); this.pack = FH(s.pack); this.counter = s.counter || 0; this.failedAuth = s.failedAuth || 0; if (s.ulcKey && this.ulcKey) this.ulcKey = FH(s.ulcKey); this.tamperOpen = !!s.tamperOpen; }
   }
 
   // Type 4 (DESFire): NDEF application with a CC file and an NDEF file, read through ISO APDUs.

@@ -39,6 +39,17 @@ struct RawResponse: Hashable, Sendable {
     var elapsedMS: Int
 }
 
+/// A read only snapshot of an ISO 15693 (Type 5) tag's settings, used by the Type 5 tool.
+struct Type5Settings: Hashable, Sendable {
+    var dsfid: Int?
+    var afi: Int?
+    var blockSize: Int
+    var totalBlocks: Int
+    var lockedBlocks: [Bool]
+    var isSLIX: Bool
+    var isST: Bool
+}
+
 /// High-level operations. Each is run inside NFCSessionManager.run { session, tag in ... }.
 enum TagOperations {
     private static let emptyTLV = Data([0x03, 0x00, 0xFE, 0x00])
@@ -157,13 +168,42 @@ enum TagOperations {
         }
 
         if spec.supportsSignature {
-            info.signature = try await probe(session, tag, { try await MiFareCommands.readSignature(tag) })
+            if let signature = try await probe(session, tag, { try await MiFareCommands.readSignature(tag) }) {
+                info.signature = signature
+                info.signatureVerdict = OriginalitySignature.verify(signature: signature, uid: info.uid, chip: spec)
+            }
+        }
+
+        if isNTAG21x(spec) {
+            if let mirror = try await probe(session, tag, { try await NTAGMirror.read(tag, chip: spec) }) {
+                info.extras.append(field("Mirror", mirrorDescription(mirror), "arrow.triangle.2.circlepath"))
+            }
+        }
+
+        // The NTAG 213 TT answers READ_TT_STATUS with five bytes of tamper state.
+        if spec.name.contains("TT") {
+            if let tamper = try await probe(session, tag, { try await MiFareCommands.transceive(tag, Data([0xA4, 0x00]), expectAck: false) }), tamper.count >= 5 {
+                info.tamperStatus = Data(tamper.prefix(5))
+            }
         }
 
         if let version {
             info.extras.append(field("GET_VERSION", version.hexString(separator: " "), "info.circle"))
         }
         return info
+    }
+
+    private static func mirrorDescription(_ mirror: MirrorConfig) -> String {
+        switch mirror.kind {
+        case .none:
+            return "Off"
+        case .uid:
+            return "UID at page \(mirror.page), byte \(mirror.byte)"
+        case .counter:
+            return "Counter at page \(mirror.page), byte \(mirror.byte)"
+        case .both:
+            return "UID and counter at page \(mirror.page), byte \(mirror.byte)"
+        }
     }
 
     private static func readDESFire(_ session: NFCTagReaderSession, _ tag: NFCMiFareTag, includeDump: Bool) async throws -> TagInfo {
@@ -191,6 +231,21 @@ enum TagOperations {
             }
             if !version.production.isEmpty {
                 info.extras.append(field("Production data", version.production.hexString(separator: " "), "info.circle"))
+            }
+        }
+
+        // The master application lists the other applications and, on EV1 and newer, the free memory.
+        if try await attempt({ try await DESFireCommands.selectApplication(tag, aid: Data([0x00, 0x00, 0x00])) }) != nil {
+            if let applications = try await attempt({ try await DESFireCommands.getApplicationIDs(tag) }) {
+                if applications.isEmpty {
+                    info.extras.append(field("Applications", "None", "app.badge"))
+                } else {
+                    let list = applications.map { $0.hexString() }.joined(separator: ", ")
+                    info.extras.append(field("Applications", "\(applications.count): \(list)", "app.badge"))
+                }
+            }
+            if let free = try await attempt({ try await DESFireCommands.getFreeMemory(tag) }), let bytes = free {
+                info.extras.append(field("Free memory", "\(bytes) bytes", "memorychip"))
             }
         }
 
@@ -231,6 +286,14 @@ enum TagOperations {
             info.extras.append(field("Blocks", "\(total) blocks of \(blockSize) bytes", "square.grid.3x3"))
         }
         info.extras.append(field("IC manufacturer code", "0x" + UInt8(truncatingIfNeeded: tag.icManufacturerCode).hex, "building.2"))
+
+        if let total = system.totalBlocks, total > 0 {
+            let count = min(total, maxProbePages)
+            if let locked = try await attempt({ try await ISO15693Commands.blockSecurityStatus(tag, from: 0, to: count - 1) }) {
+                let lockedCount = locked.filter { $0 }.count
+                info.extras.append(field("Locked blocks", "\(lockedCount) of \(count)", "lock"))
+            }
+        }
 
         if includeDump {
             let pages = try await dumpISO15693(session, tag, system)
@@ -459,7 +522,7 @@ enum TagOperations {
     }
 
     /// Writes `dump.pages` whose index is within `range` (nil = the chip's user range). Skips unreadable pages. Returns pages written.
-    static func writeDump(_ session: NFCTagReaderSession, _ tag: NFCTag, dump: MemoryDump, range: ClosedRange<Int>?, password: Data?) async throws -> Int {
+    static func writeDump(_ session: NFCTagReaderSession, _ tag: NFCTag, dump: MemoryDump, range: ClosedRange<Int>?, password: Data?, includeSerialPages: Bool = false) async throws -> Int {
         switch tag {
         case .miFare(let mifare) where mifare.mifareFamily != .desfire:
             session.alertMessage = "Identifying the tag."
@@ -471,7 +534,14 @@ enum TagOperations {
                 throw NFCEditorError.invalidInput("The dump must use 4-byte pages for this tag.")
             }
             let target = range ?? spec.userPageRange ?? fallbackRange(for: dump)
-            let pages = dump.pages.filter { target.contains($0.index) && $0.index <= 255 && $0.readable && $0.bytes.count == 4 }
+            var indices = Set(dump.pages.filter { target.contains($0.index) && $0.index <= 255 && $0.readable && $0.bytes.count == 4 }.map { $0.index })
+            if includeSerialPages {
+                // Pages 0 and 1 hold the serial number; only magic clone chips accept a write there.
+                for serialPage in [0, 1] where dump.pages.contains(where: { $0.index == serialPage && $0.readable && $0.bytes.count == 4 }) {
+                    indices.insert(serialPage)
+                }
+            }
+            let pages = dump.pages.filter { indices.contains($0.index) }.sorted { $0.index < $1.index }
             guard !pages.isEmpty else {
                 throw NFCEditorError.invalidInput("The dump has no pages in the selected range.")
             }
@@ -613,7 +683,7 @@ enum TagOperations {
         }
     }
 
-    static func setCounter(_ session: NFCTagReaderSession, _ tag: NFCTag, enabled: Bool, password: Data?) async throws {
+    static func setCounter(_ session: NFCTagReaderSession, _ tag: NFCTag, enabled: Bool, passwordProtected: Bool?, password: Data?) async throws {
         guard case .miFare(let mifare) = tag, mifare.mifareFamily != .desfire else {
             throw NFCEditorError.notSupportedOnChip("Counters are only available on NTAG tags.")
         }
@@ -630,9 +700,17 @@ enum TagOperations {
         var (_, cfg1) = try await readConfigPages(mifare, layout)
         session.alertMessage = enabled ? "Enabling the counter." : "Disabling the counter."
         if enabled {
-            cfg1[0] |= 0x10
+            cfg1[0] |= 0x10 // NFC_CNT_EN
         } else {
             cfg1[0] &= 0xEF
+        }
+        // NFC_CNT_PWD_PROT makes the counter readable only after a password check; nil keeps it as it is.
+        if let passwordProtected {
+            if passwordProtected {
+                cfg1[0] |= 0x08
+            } else {
+                cfg1[0] &= 0xF7
+            }
         }
         try await MiFareCommands.write(mifare, page: layout.cfg1, bytes: Data(cfg1))
     }
@@ -710,6 +788,412 @@ enum TagOperations {
             return (ChipIdentifier.iso7816Generic(), Data(iso7816.identifier))
         @unknown default:
             throw NFCEditorError.unsupportedTag("This tag type is not supported.")
+        }
+    }
+
+    // MARK: NDEF read only flag and configuration lock
+
+    /// Marks the tag read only for NDEF without burning the lock bits: Type 2 sets the OTP read only
+    /// bit in the capability container, Type 5 sets the read only nibble of block 0.
+    static func setNDEFReadOnlyFlag(_ session: NFCTagReaderSession, _ tag: NFCTag) async throws {
+        switch tag {
+        case .miFare(let mifare) where mifare.mifareFamily != .desfire:
+            session.alertMessage = "Reading the capability container."
+            let page = try await MiFareCommands.read(mifare, page: 3).bytes
+            guard page.count >= 4 else {
+                throw NFCEditorError.commandFailed("The capability container could not be read.")
+            }
+            var cc = Array(page[0..<4])
+            cc[3] |= 0x0F
+            session.alertMessage = "Setting the read only flag."
+            try await MiFareCommands.write(mifare, page: 3, bytes: Data(cc))
+        case .iso15693(let iso15693):
+            session.alertMessage = "Reading the capability container."
+            let blocks = try await ISO15693Commands.readBlocks(iso15693, from: 0, to: 0, progress: nil)
+            guard let block = blocks.first, block.readable, block.bytes.count >= 2 else {
+                throw NFCEditorError.commandFailed("The capability container could not be read.")
+            }
+            var bytes = block.bytes.bytes
+            bytes[1] = (bytes[1] & 0xF0) | 0x0F
+            session.alertMessage = "Setting the read only flag."
+            try await ISO15693Commands.writeBlock(iso15693, index: 0, bytes: Data(bytes))
+        default:
+            throw NFCEditorError.notSupportedOnChip("The NDEF read only flag is only available on Type 2 and Type 5 tags.")
+        }
+    }
+
+    /// Burns CFGLCK so the configuration pages can never be changed again. Irreversible.
+    static func lockConfiguration(_ session: NFCTagReaderSession, _ tag: NFCTag, password: Data?) async throws {
+        let mifare = try mifareType2(tag)
+        session.alertMessage = "Identifying the tag."
+        let (spec, _) = try await identifyType2(session, mifare)
+        let layout = try passwordLayout(spec)
+        if let password {
+            session.alertMessage = "Authenticating."
+            try await authenticate(mifare, password: password)
+        }
+        var (_, cfg1) = try await readConfigPages(mifare, layout)
+        session.alertMessage = "Locking the configuration."
+        cfg1[0] |= 0x40 // CFGLCK
+        try await MiFareCommands.write(mifare, page: layout.cfg1, bytes: Data(cfg1))
+    }
+
+    // MARK: Tamper, lock pages and lock state
+
+    static func readTamperStatus(_ session: NFCTagReaderSession, _ tag: NFCTag) async throws -> Data {
+        let mifare = try mifareType2(tag)
+        session.alertMessage = "Identifying the tag."
+        let (spec, _) = try await identifyType2(session, mifare)
+        guard spec.name.contains("TT") else {
+            throw NFCEditorError.notSupportedOnChip("Only the NTAG 213TT reports a tamper status.")
+        }
+        session.alertMessage = "Reading the tamper status."
+        let response = try await MiFareCommands.transceive(mifare, Data([0xA4, 0x00]), expectAck: false)
+        guard response.count >= 5 else {
+            throw NFCEditorError.commandFailed("The tamper status answer was too short.")
+        }
+        return Data(response.prefix(5))
+    }
+
+    static func lockPages(_ session: NFCTagReaderSession, _ tag: NFCTag, groups: [PageLock], password: Data?) async throws {
+        let mifare = try mifareType2(tag)
+        session.alertMessage = "Identifying the tag."
+        let (spec, _) = try await identifyType2(session, mifare)
+        guard spec.supportsRawPages else {
+            throw NFCEditorError.notSupportedOnChip("Lock bits are not available on \(spec.name).")
+        }
+        if let password {
+            session.alertMessage = "Authenticating."
+            try await authenticate(mifare, password: password)
+        }
+
+        session.alertMessage = "Reading the current lock bytes."
+        let page2 = try await MiFareCommands.read(mifare, page: 2).bytes
+        guard page2.count >= 4 else {
+            throw NFCEditorError.commandFailed("The static lock bytes could not be read.")
+        }
+        let staticLock = Data(page2[2..<4])
+
+        var dynamicLock: Data?
+        var dynamicTail: UInt8 = 0
+        if let dynamicPage = spec.dynamicLockPage {
+            let dynamic = try await MiFareCommands.read(mifare, page: dynamicPage).bytes
+            guard dynamic.count >= 4 else {
+                throw NFCEditorError.commandFailed("The dynamic lock bytes could not be read.")
+            }
+            dynamicLock = Data(dynamic[0..<3])
+            dynamicTail = dynamic[3]
+        }
+
+        let result = LockBits.bytesToLock(groups: groups, chip: spec, staticLock: staticLock, dynamicLock: dynamicLock)
+        let lockBytes = result.page2LockBytes.bytes
+        guard lockBytes.count == 2 else {
+            throw NFCEditorError.failed("The lock bytes could not be prepared.")
+        }
+
+        session.alertMessage = "Locking the pages."
+        var newPage2 = Array(page2[0..<4])
+        newPage2[2] = lockBytes[0]
+        newPage2[3] = lockBytes[1]
+        try await MiFareCommands.write(mifare, page: 2, bytes: Data(newPage2))
+
+        if let dynamicPage = spec.dynamicLockPage, let dynamic = result.dynamic, dynamic.count == 3 {
+            var block = dynamic.bytes
+            block.append(dynamicTail)
+            try await MiFareCommands.write(mifare, page: dynamicPage, bytes: Data(block.prefix(4)))
+        }
+    }
+
+    static func lockState(_ session: NFCTagReaderSession, _ tag: NFCTag) async throws -> [PageLock] {
+        let mifare = try mifareType2(tag)
+        session.alertMessage = "Identifying the tag."
+        let (spec, _) = try await identifyType2(session, mifare)
+        guard spec.supportsRawPages else {
+            throw NFCEditorError.notSupportedOnChip("Lock bits are not available on \(spec.name).")
+        }
+        session.alertMessage = "Reading the lock state."
+        let page2 = try await MiFareCommands.read(mifare, page: 2).bytes
+        guard page2.count >= 4 else {
+            throw NFCEditorError.commandFailed("The static lock bytes could not be read.")
+        }
+        let staticLock = Data(page2[2..<4])
+
+        var dynamicLock: Data?
+        if let dynamicPage = spec.dynamicLockPage {
+            if let dynamic = try await probe(session, mifare, { try await MiFareCommands.read(mifare, page: dynamicPage) }), dynamic.count >= 3 {
+                dynamicLock = Data(dynamic.prefix(3))
+            }
+        }
+        return LockBits.groups(chip: spec, staticLock: staticLock, dynamicLock: dynamicLock)
+    }
+
+    // MARK: Ultralight C
+
+    static func ultralightCAuthenticate(_ session: NFCTagReaderSession, _ tag: NFCTag, key: Data) async throws {
+        let mifare = try mifareType2(tag)
+        try checkUltralightCKey(key)
+        session.alertMessage = "Authenticating."
+        try await UltralightC.authenticate(mifare, key: key)
+    }
+
+    static func ultralightCSetKey(_ session: NFCTagReaderSession, _ tag: NFCTag, currentKey: Data, newKey: Data, firstPage: Int, writeOnly: Bool) async throws {
+        let mifare = try mifareType2(tag)
+        try checkUltralightCKey(currentKey)
+        try checkUltralightCKey(newKey)
+        session.alertMessage = "Authenticating."
+        try await UltralightC.authenticate(mifare, key: currentKey)
+        session.alertMessage = "Writing the new key."
+        try await UltralightC.writeKey(mifare, key: newKey)
+        session.alertMessage = "Setting the protection."
+        try await UltralightC.setProtection(mifare, firstPage: firstPage, writeOnly: writeOnly)
+    }
+
+    static func ultralightCRemoveProtection(_ session: NFCTagReaderSession, _ tag: NFCTag, key: Data) async throws {
+        let mifare = try mifareType2(tag)
+        try checkUltralightCKey(key)
+        session.alertMessage = "Authenticating."
+        try await UltralightC.authenticate(mifare, key: key)
+        session.alertMessage = "Removing the protection."
+        try await UltralightC.removeProtection(mifare)
+    }
+
+    // MARK: Mirror
+
+    static func writeMirroredURL(_ session: NFCTagReaderSession, _ tag: NFCTag, url: String, kind: MirrorKind, password: Data?) async throws -> String {
+        let mifare = try mifareType2(tag)
+        session.alertMessage = "Identifying the tag."
+        let (spec, _) = try await identifyType2(session, mifare)
+        return try await NTAGMirror.writeMirroredURL(session, mifare, chip: spec, url: url, kind: kind, password: password)
+    }
+
+    static func readMirror(_ session: NFCTagReaderSession, _ tag: NFCTag) async throws -> MirrorConfig {
+        let mifare = try mifareType2(tag)
+        session.alertMessage = "Identifying the tag."
+        let (spec, _) = try await identifyType2(session, mifare)
+        session.alertMessage = "Reading the mirror setting."
+        return try await NTAGMirror.read(mifare, chip: spec)
+    }
+
+    static func disableMirror(_ session: NFCTagReaderSession, _ tag: NFCTag, password: Data?) async throws {
+        let mifare = try mifareType2(tag)
+        session.alertMessage = "Identifying the tag."
+        let (spec, _) = try await identifyType2(session, mifare)
+        if let password {
+            session.alertMessage = "Authenticating."
+            try await authenticate(mifare, password: password)
+        }
+        session.alertMessage = "Turning the mirror off."
+        try await NTAGMirror.disable(mifare, chip: spec)
+    }
+
+    // MARK: DESFire
+
+    static func desfireOverview(_ session: NFCTagReaderSession, _ tag: NFCTag) async throws -> DESFireOverview {
+        let mifare = try desfireTag(tag)
+        session.alertMessage = "Reading the card."
+        var overview = DESFireOverview(version: nil, applications: [], freeMemory: nil, keySettings: nil, maxKeys: nil, hasNDEFApplication: false)
+        overview.version = (try await attempt { try await DESFireCommands.getVersion(mifare) })?.raw
+        _ = try await attempt { try await DESFireCommands.selectApplication(mifare, aid: Data([0x00, 0x00, 0x00])) }
+        if let applications = try await attempt({ try await DESFireCommands.getApplicationIDs(mifare) }) {
+            overview.applications = applications
+            overview.hasNDEFApplication = applications.contains(Data([0x01, 0x00, 0x00]))
+        }
+        if let free = try await attempt({ try await DESFireCommands.getFreeMemory(mifare) }), let bytes = free {
+            overview.freeMemory = bytes
+        }
+        if let settings = try await attempt({ try await DESFireCommands.getKeySettings(mifare) }) {
+            overview.keySettings = settings.settings
+            overview.maxKeys = settings.maxKeys
+        }
+        return overview
+    }
+
+    static func desfireFormat(_ session: NFCTagReaderSession, _ tag: NFCTag, masterKey: Data) async throws {
+        let mifare = try desfireTag(tag)
+        session.alertMessage = "Selecting the card."
+        try await DESFireCommands.selectApplication(mifare, aid: Data([0x00, 0x00, 0x00]))
+        session.alertMessage = "Authenticating with the master key."
+        _ = try await DESFireCommands.authenticateLegacy(mifare, keyNumber: 0, key: masterKey)
+        session.alertMessage = "Formatting the card."
+        try await DESFireCommands.formatPICC(mifare)
+    }
+
+    static func desfireCreateNDEFApplication(_ session: NFCTagReaderSession, _ tag: NFCTag, masterKey: Data, formatFirst: Bool, ndefFileSize: Int) async throws {
+        let mifare = try desfireTag(tag)
+        try await DESFireCommands.createNDEFApplication(session, mifare, masterKey: masterKey, formatFirst: formatFirst, ndefFileSize: ndefFileSize)
+    }
+
+    // MARK: Type 5 settings
+
+    static func type5Settings(_ session: NFCTagReaderSession, _ tag: NFCTag) async throws -> Type5Settings {
+        let iso15693 = try iso15693Target(tag)
+        session.alertMessage = "Reading the settings."
+        let system = try await ISO15693Commands.systemInfo(iso15693)
+        let blockSize = system.blockSize ?? 4
+        let totalBlocks = system.totalBlocks ?? 0
+        var lockedBlocks: [Bool] = []
+        if totalBlocks > 0 {
+            let count = min(totalBlocks, maxProbePages)
+            lockedBlocks = (try await attempt { try await ISO15693Commands.blockSecurityStatus(iso15693, from: 0, to: count - 1) }) ?? []
+        }
+        let spec = iso15693Spec(iso15693, system)
+        let isSLIX = spec.family == .icodeSLIX || spec.family == .icodeSLIX2 || spec.family == .icodeSLI || spec.family == .icodeDNA
+        let isST = spec.family == .st25TV || spec.family == .st25TA
+        return Type5Settings(dsfid: system.dsfid, afi: system.afi, blockSize: blockSize, totalBlocks: totalBlocks, lockedBlocks: lockedBlocks, isSLIX: isSLIX, isST: isST)
+    }
+
+    static func type5WriteAFI(_ session: NFCTagReaderSession, _ tag: NFCTag, afi: UInt8, lock: Bool) async throws {
+        let iso15693 = try iso15693Target(tag)
+        session.alertMessage = "Writing the AFI."
+        try await ISO15693Commands.writeAFI(iso15693, afi: afi)
+        if lock {
+            session.alertMessage = "Locking the AFI."
+            try await ISO15693Commands.lockAFI(iso15693)
+        }
+    }
+
+    static func type5WriteDSFID(_ session: NFCTagReaderSession, _ tag: NFCTag, dsfid: UInt8, lock: Bool) async throws {
+        let iso15693 = try iso15693Target(tag)
+        session.alertMessage = "Writing the DSFID."
+        try await ISO15693Commands.writeDSFID(iso15693, dsfid: dsfid)
+        if lock {
+            session.alertMessage = "Locking the DSFID."
+            try await ISO15693Commands.lockDSFID(iso15693)
+        }
+    }
+
+    static func type5LockBlocks(_ session: NFCTagReaderSession, _ tag: NFCTag, blocks: [Int]) async throws {
+        let iso15693 = try iso15693Target(tag)
+        guard !blocks.isEmpty else {
+            throw NFCEditorError.invalidInput("Choose at least one block to lock.")
+        }
+        var done = 0
+        for block in blocks {
+            session.alertMessage = "Locking block \(block) (\(done + 1) of \(blocks.count))."
+            try await ISO15693Commands.lockBlock(iso15693, index: block)
+            done += 1
+        }
+    }
+
+    // MARK: ICODE SLIX
+
+    static func slixSetPassword(_ session: NFCTagReaderSession, _ tag: NFCTag, identifier: SLIXPassword, currentPassword: Data?, newPassword: Data) async throws {
+        let iso15693 = try iso15693Target(tag)
+        if let currentPassword {
+            session.alertMessage = "Presenting the current password."
+            try await ISO15693Commands.slixSetPassword(iso15693, identifier: identifier, password: currentPassword)
+        }
+        session.alertMessage = "Writing the new password."
+        try await ISO15693Commands.slixWritePassword(iso15693, identifier: identifier, password: newPassword)
+    }
+
+    static func slixPresentPassword(_ session: NFCTagReaderSession, _ tag: NFCTag, identifier: SLIXPassword, password: Data) async throws {
+        let iso15693 = try iso15693Target(tag)
+        session.alertMessage = "Presenting the password."
+        try await ISO15693Commands.slixSetPassword(iso15693, identifier: identifier, password: password)
+    }
+
+    static func slixSetPrivacy(_ session: NFCTagReaderSession, _ tag: NFCTag, enabled: Bool, password: Data) async throws {
+        let iso15693 = try iso15693Target(tag)
+        session.alertMessage = "Presenting the privacy password."
+        try await ISO15693Commands.slixSetPassword(iso15693, identifier: .privacy, password: password)
+        if enabled {
+            session.alertMessage = "Turning privacy mode on."
+            try await ISO15693Commands.slixEnablePrivacy(iso15693)
+        }
+    }
+
+    static func slixSetEAS(_ session: NFCTagReaderSession, _ tag: NFCTag, enabled: Bool) async throws {
+        let iso15693 = try iso15693Target(tag)
+        if enabled {
+            session.alertMessage = "Turning EAS on."
+            try await ISO15693Commands.slixSetEAS(iso15693)
+        } else {
+            session.alertMessage = "Turning EAS off."
+            try await ISO15693Commands.slixResetEAS(iso15693)
+        }
+    }
+
+    static func slixEASAlarm(_ session: NFCTagReaderSession, _ tag: NFCTag) async throws -> Bool {
+        let iso15693 = try iso15693Target(tag)
+        session.alertMessage = "Checking the EAS alarm."
+        let alarm = try await ISO15693Commands.slixEASAlarm(iso15693)
+        return !alarm.isEmpty
+    }
+
+    static func slixDestroy(_ session: NFCTagReaderSession, _ tag: NFCTag, password: Data) async throws {
+        let iso15693 = try iso15693Target(tag)
+        session.alertMessage = "Destroying the tag."
+        try await ISO15693Commands.slixDestroy(iso15693, password: password)
+    }
+
+    // MARK: ST25TV
+
+    static func stPresentPassword(_ session: NFCTagReaderSession, _ tag: NFCTag, number: UInt8, password: Data) async throws {
+        let iso15693 = try iso15693Target(tag)
+        session.alertMessage = "Presenting the password."
+        try await ISO15693Commands.stPresentPassword(iso15693, number: number, password: password)
+    }
+
+    static func stWritePassword(_ session: NFCTagReaderSession, _ tag: NFCTag, number: UInt8, password: Data) async throws {
+        let iso15693 = try iso15693Target(tag)
+        session.alertMessage = "Writing the password."
+        try await ISO15693Commands.stWritePassword(iso15693, number: number, password: password)
+    }
+
+    // MARK: FeliCa
+
+    static func feliCaRead(_ session: NFCTagReaderSession, _ tag: NFCTag, serviceCode: UInt16, blocks: [Int]) async throws -> [Data] {
+        let feliCa = try feliCaTarget(tag)
+        session.alertMessage = "Reading the blocks."
+        return try await FeliCaCommands.readWithoutEncryption(feliCa, serviceCode: serviceCode, blocks: blocks)
+    }
+
+    static func feliCaWrite(_ session: NFCTagReaderSession, _ tag: NFCTag, serviceCode: UInt16, block: Int, data: Data) async throws {
+        let feliCa = try feliCaTarget(tag)
+        session.alertMessage = "Writing block \(block)."
+        try await FeliCaCommands.writeWithoutEncryption(feliCa, serviceCode: serviceCode, block: block, data: data)
+    }
+
+    static func feliCaServices(_ session: NFCTagReaderSession, _ tag: NFCTag, serviceCodes: [UInt16]) async throws -> [UInt16] {
+        let feliCa = try feliCaTarget(tag)
+        session.alertMessage = "Checking the services."
+        return try await FeliCaCommands.requestService(feliCa, serviceCodes: serviceCodes)
+    }
+
+    // MARK: Tag kind helpers
+
+    private static func mifareType2(_ tag: NFCTag) throws -> NFCMiFareTag {
+        guard case .miFare(let mifare) = tag, mifare.mifareFamily != .desfire else {
+            throw NFCEditorError.notSupportedOnChip("This feature needs an NTAG or Ultralight tag.")
+        }
+        return mifare
+    }
+
+    private static func desfireTag(_ tag: NFCTag) throws -> NFCMiFareTag {
+        guard case .miFare(let mifare) = tag, mifare.mifareFamily == .desfire else {
+            throw NFCEditorError.notSupportedOnChip("This feature needs a DESFire tag.")
+        }
+        return mifare
+    }
+
+    private static func iso15693Target(_ tag: NFCTag) throws -> NFCISO15693Tag {
+        guard case .iso15693(let iso15693) = tag else {
+            throw NFCEditorError.notSupportedOnChip("This feature needs an ISO 15693 (Type 5) tag.")
+        }
+        return iso15693
+    }
+
+    private static func feliCaTarget(_ tag: NFCTag) throws -> NFCFeliCaTag {
+        guard case .feliCa(let feliCa) = tag else {
+            throw NFCEditorError.notSupportedOnChip("This feature needs a FeliCa tag.")
+        }
+        return feliCa
+    }
+
+    private static func checkUltralightCKey(_ key: Data) throws {
+        guard key.count == 16 else {
+            throw NFCEditorError.invalidInput("An Ultralight C key is 16 bytes.")
         }
     }
 

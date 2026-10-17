@@ -29,7 +29,9 @@ enum RecordParsers {
     static func parse(_ record: NDEFRecord) -> RecordSummary {
         var summary = classify(record)
         let emptyRaw = summary.kind == .raw && record.payload.isEmpty
-        if summary.kind != .empty, !emptyRaw, !summary.detail.isEmpty, !summary.actions.contains(.copy(summary.detail)) {
+        // A handover detail is a label we made up, not data worth copying.
+        let noCopy = summary.kind == .empty || summary.kind == .handover || emptyRaw
+        if !noCopy, !summary.detail.isEmpty, !summary.actions.contains(.copy(summary.detail)) {
             summary.actions.append(.copy(summary.detail))
         }
         return summary
@@ -76,6 +78,12 @@ enum RecordParsers {
         return (uriValue, titleValue)
     }
 
+    /// Reads a Handover Select record: the version byte and, per alternative carrier, its power state (0 inactive, 1 active, 2 activating) and the ID of the carrier record it points at.
+    static func handoverSelect(_ record: NDEFRecord) -> (version: UInt8, carriers: [(powerState: UInt8, reference: String)])? {
+        guard let content = handoverContent(record) else { return nil }
+        return (content.version, content.carriers)
+    }
+
     // MARK: Classification
 
     private static func classify(_ record: NDEFRecord) -> RecordSummary {
@@ -98,6 +106,8 @@ enum RecordParsers {
                     return smartPosterSummary(link: poster.uri, posterTitle: poster.title)
                 }
                 return rawSummary(record)
+            case "Hs":
+                return handoverSummary(record)
             default:
                 return unknownWellKnownSummary(record)
             }
@@ -329,6 +339,70 @@ enum RecordParsers {
         var actions: [RecordAction] = []
         if let url = makeURL(link) { actions.append(.openURL(url)) }
         return RecordSummary(kind: .smartPoster, detail: link, fields: fields, actions: actions)
+    }
+
+    private static func handoverSummary(_ record: NDEFRecord) -> RecordSummary {
+        guard let content = handoverContent(record) else {
+            let fields = [TagField(label: "Size", value: byteLabel(record.payload.count), systemImage: "externaldrive")]
+            return RecordSummary(kind: .handover, detail: "Handover", fields: fields)
+        }
+        var fields = [
+            TagField(label: "Version", value: "\(content.version >> 4).\(content.version & 0x0F)", systemImage: "number")
+        ]
+        if content.carriers.isEmpty {
+            fields.append(TagField(label: "Carrier", value: "None offered", systemImage: "dot.radiowaves.left.and.right"))
+        }
+        for (index, carrier) in content.carriers.enumerated() {
+            let label = content.carriers.count == 1 ? "Carrier" : "Carrier \(index + 1)"
+            let reference = carrier.reference.isEmpty ? "none" : carrier.reference
+            let value = "ID \(reference), \(powerStateName(carrier.powerState))"
+            fields.append(TagField(label: label, value: value, systemImage: "dot.radiowaves.left.and.right"))
+        }
+        // The carrier record itself is a sibling the parser cannot see. Handover on tags is nearly always
+        // Bluetooth pairing, so only a carrier type naming something else changes the wording.
+        let bluetooth = !content.carriers.isEmpty && content.carrierTypes.allSatisfy { $0.contains("bluetooth") }
+        return RecordSummary(kind: .handover, detail: bluetooth ? "Bluetooth pairing" : "Handover", fields: fields)
+    }
+
+    private struct HandoverContent {
+        var version: UInt8
+        var carriers: [(powerState: UInt8, reference: String)]
+        var carrierTypes: [String]
+    }
+
+    private static func handoverContent(_ record: NDEFRecord) -> HandoverContent? {
+        guard record.tnf == .wellKnown, record.typeString == "Hs", let version = record.payload.first else { return nil }
+        var content = HandoverContent(version: version, carriers: [], carrierTypes: [])
+        let body = Data(record.payload.dropFirst())
+        // Since version 1.2 a select record may carry no carriers at all, meaning the device has none to offer.
+        guard !body.isEmpty else { return content }
+        guard let inner = try? NDEFMessageCodec.decode(body) else { return nil }
+        for local in inner where local.tnf == .wellKnown {
+            let bytes = [UInt8](local.payload)
+            guard bytes.count >= 2, bytes.count >= 2 + Int(bytes[1]) else {
+                if local.typeString == "ac" { return nil }
+                continue
+            }
+            let value = String(decoding: bytes[2..<(2 + Int(bytes[1]))], as: UTF8.self)
+            switch local.typeString {
+            case "ac":
+                content.carriers.append((powerState: bytes[0] & 0x03, reference: value))
+            case "Hc":
+                content.carrierTypes.append(value.lowercased())
+            default:
+                continue
+            }
+        }
+        return content
+    }
+
+    private static func powerStateName(_ state: UInt8) -> String {
+        switch state {
+        case 0: return "inactive"
+        case 1: return "active"
+        case 2: return "activating"
+        default: return "unknown state"
+        }
     }
 
     private static func mediaSummary(_ record: NDEFRecord) -> RecordSummary {
