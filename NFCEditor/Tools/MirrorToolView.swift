@@ -130,7 +130,7 @@ struct MirrorToolView: View {
             }
         }
         Section {
-            ScanButton("Read mirror setting", systemImage: "magnifyingglass") {
+            ScanButton("Read mirror setting") {
                 readSetting()
             }
         } footer: {
@@ -142,7 +142,7 @@ struct MirrorToolView: View {
 
     private var turnOffSection: some View {
         Section {
-            ScanButton("Turn mirror off", systemImage: "link") {
+            ScanButton("Turn mirror off") {
                 turnOff()
             }
         } footer: {

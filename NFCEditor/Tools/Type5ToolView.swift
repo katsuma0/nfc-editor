@@ -117,7 +117,7 @@ struct Type5ToolView: View {
     @ViewBuilder
     private var settingsSections: some View {
         Section {
-            ScanButton("Read settings", systemImage: "magnifyingglass") {
+            ScanButton("Read settings") {
                 readSettings()
             }
         } footer: {
@@ -140,7 +140,7 @@ struct Type5ToolView: View {
             Text("The application family identifier tells readers what kind of item the tag is on. 00 means any. Locking makes the value permanent.")
         }
         Section {
-            ScanButton("Write AFI", systemImage: "square.and.pencil") {
+            ScanButton("Write AFI") {
                 requestWriteAFI()
             }
         }
@@ -157,7 +157,7 @@ struct Type5ToolView: View {
             Text("The data storage format identifier is one byte that says how the memory is organized. Most readers ignore it. Locking makes the value permanent.")
         }
         Section {
-            ScanButton("Write DSFID", systemImage: "square.and.pencil") {
+            ScanButton("Write DSFID") {
                 requestWriteDSFID()
             }
         }
@@ -174,7 +174,7 @@ struct Type5ToolView: View {
                 .foregroundStyle(.red)
         }
         Section {
-            ScanButton(lockBlocksTitle, systemImage: "lock.fill", role: .destructive) {
+            ScanButton(lockBlocksTitle, role: .destructive) {
                 requestLockBlocks()
             }
         }
@@ -253,14 +253,14 @@ struct Type5ToolView: View {
             Text("Each SLIX password is 4 bytes and guards one feature: reading, writing, privacy mode, destroy, or EAS and AFI. Changing a password needs the current one. Check the tag's datasheet for its default passwords.")
         }
         Section {
-            ScanButton("Set password", systemImage: "key") {
+            ScanButton("Set password") {
                 requestSLIXPassword()
             }
         }
         .listRowBackground(Color.clear)
         .listRowInsets(EdgeInsets())
         Section {
-            ScanButton("Present password", systemImage: "checkmark.shield") {
+            ScanButton("Present password") {
                 presentSLIXPassword()
             }
         } footer: {
@@ -278,7 +278,7 @@ struct Type5ToolView: View {
             Text("In privacy mode the tag hides its memory and serial number until the privacy password is presented. Leaving privacy mode only lasts until the tag next loses power, so it hides again once it leaves the field.")
         }
         Section {
-            ScanButton(privacyOn ? "Turn privacy on" : "Leave privacy mode", systemImage: privacyOn ? "eye.slash" : "eye") {
+            ScanButton(privacyOn ? "Turn privacy on" : "Leave privacy mode") {
                 requestPrivacy()
             }
         }
@@ -296,14 +296,14 @@ struct Type5ToolView: View {
             Text("EAS is the shop anti-theft bit: with it on, security gates sound for the tag. Enter the EAS and AFI password only if the tag protects EAS with one.")
         }
         Section {
-            ScanButton(easOn ? "Turn EAS on" : "Turn EAS off", systemImage: "bell") {
+            ScanButton(easOn ? "Turn EAS on" : "Turn EAS off") {
                 setEAS()
             }
         }
         .listRowBackground(Color.clear)
         .listRowInsets(EdgeInsets())
         Section {
-            ScanButton("Test EAS alarm", systemImage: "bell.badge") {
+            ScanButton("Test EAS alarm") {
                 testEAS()
             }
         } footer: {
@@ -321,7 +321,7 @@ struct Type5ToolView: View {
                 .foregroundStyle(.red)
         }
         Section {
-            ScanButton("Destroy tag", systemImage: "xmark.octagon", role: .destructive) {
+            ScanButton("Destroy tag", role: .destructive) {
                 requestDestroy()
             }
         }
@@ -346,7 +346,7 @@ struct Type5ToolView: View {
             Text("ST25TV passwords are 8 bytes. New chips use 8 zero bytes. Check the chip's datasheet for what each password guards.")
         }
         Section {
-            ScanButton("Present password", systemImage: "checkmark.shield") {
+            ScanButton("Present password") {
                 presentSTPassword()
             }
         } footer: {
@@ -363,7 +363,7 @@ struct Type5ToolView: View {
             Text("The tag only takes a new password right after the current one, so both are sent in the same scan. Write the new password down first.")
         }
         Section {
-            ScanButton("Write password", systemImage: "key") {
+            ScanButton("Write password") {
                 requestSTPassword()
             }
         }

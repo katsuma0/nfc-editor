@@ -25,6 +25,15 @@ final class AppSettings {
         didSet { defaults.set(keepScreenAwake, forKey: Keys.keepScreenAwake) }
     }
 
+    /// Settings and Tools start with only the everyday choices; the rest sit behind a Show advanced button.
+    var showAdvancedSettings: Bool {
+        didSet { defaults.set(showAdvancedSettings, forKey: Keys.showAdvancedSettings) }
+    }
+
+    var showAdvancedTools: Bool {
+        didSet { defaults.set(showAdvancedTools, forKey: Keys.showAdvancedTools) }
+    }
+
     /// Advanced commands history, newest first, at most `historyLimit` hex strings.
     var commandHistory: [String] {
         didSet { defaults.set(commandHistory, forKey: Keys.commandHistory) }
@@ -38,6 +47,8 @@ final class AppSettings {
         defaultLanguage = language.isEmpty ? "en" : language
         readFullMemoryOnScan = stored.object(forKey: Keys.readFullMemoryOnScan) as? Bool ?? true
         keepScreenAwake = stored.bool(forKey: Keys.keepScreenAwake)
+        showAdvancedSettings = stored.bool(forKey: Keys.showAdvancedSettings)
+        showAdvancedTools = stored.bool(forKey: Keys.showAdvancedTools)
         let history = stored.stringArray(forKey: Keys.commandHistory) ?? []
         commandHistory = Array(history.prefix(AppSettings.historyLimit))
     }
@@ -66,5 +77,7 @@ final class AppSettings {
         static let readFullMemoryOnScan = "settings.readFullMemoryOnScan"
         static let keepScreenAwake = "settings.keepScreenAwake"
         static let commandHistory = "settings.commandHistory"
+        static let showAdvancedSettings = "settings.showAdvancedSettings"
+        static let showAdvancedTools = "settings.showAdvancedTools"
     }
 }

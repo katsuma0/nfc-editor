@@ -1,6 +1,6 @@
 # NFC Editor privacy policy
 
-Last updated October 10, 2026.
+Last updated October 17, 2026. The hosted copy is `web/privacy.html`; keep the two in step.
 
 NFC Editor does not collect, store or transmit any personal data. The app has no account, no analytics, no advertising and no network code of its own. Tags you save stay in the app's storage on your iPhone and leave the phone only when you export or share them yourself.
 

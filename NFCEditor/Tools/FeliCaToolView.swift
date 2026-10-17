@@ -38,7 +38,7 @@ struct FeliCaToolView: View {
             }
 
             Section {
-                ScanButton("Read blocks", systemImage: "magnifyingglass") {
+                ScanButton("Read blocks") {
                     read()
                 }
             } footer: {
@@ -114,7 +114,7 @@ struct FeliCaToolView: View {
         }
 
         Section {
-            ScanButton("Write block", systemImage: "square.and.pencil") {
+            ScanButton("Write block") {
                 requestWrite()
             }
         }
@@ -138,7 +138,7 @@ struct FeliCaToolView: View {
         }
 
         Section {
-            ScanButton("Check services", systemImage: "list.bullet.rectangle") {
+            ScanButton("Check services") {
                 checkServices()
             }
         }

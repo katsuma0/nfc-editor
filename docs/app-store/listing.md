@@ -26,7 +26,7 @@ NFC Editor reads and writes NFC tags. Hold a tag to the top of your iPhone and y
 
 Write a link, a contact card, a Wi-Fi network, a phone number, a location, a plain text note, or a raw record you typed in hex. Put several on one tag and reorder them. The app tells you how many bytes the tag will need before you tap it, and reads the tag back afterwards to check the write landed.
 
-The tools other apps sell as a paid upgrade are all here and all free. The memory editor shows every page of the chip and lets you edit one at a time. You can set or remove an NTAG password, send raw commands to the chip, write a saved dump back to a tag, read the scan counter, and read the NXP signature. Erase, copy tag to tag, format, and lock are here too. Lock is permanent, and the app asks twice.
+The tools other apps sell as a paid upgrade are all here and all free. The memory editor shows every page of the chip and lets you edit one at a time. You can set or remove an NTAG password, send raw commands to the chip, write a saved dump back to a tag, read the scan counter, and read the NXP signature. Erase, copy tag to tag, format, and lock are here too. Lock is permanent, and the app asks twice. The chip-specific tools stay out of the way until you tap Show advanced tools.
 
 Everything you scan or build can be saved on the phone and exported as JSON. Nothing is uploaded anywhere. There is no account, no analytics, and no ads.
 
@@ -44,7 +44,7 @@ First release.
 
 Support URL: https://github.com/katsuma0/nfc-editor/issues
 Marketing URL: leave blank.
-Privacy policy URL: host docs/app-store/privacy-policy.md somewhere public (GitHub Pages on this repo is the quickest) and paste that address.
+Privacy policy URL: https://katsuma.ca/nfc-editor/privacy.html (published from `web/privacy.html` by the Pages workflow).
 
 ## Age rating
 

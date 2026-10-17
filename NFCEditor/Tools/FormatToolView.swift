@@ -22,7 +22,7 @@ struct FormatToolView: View {
             }
 
             Section {
-                ScanButton("Format tag", systemImage: "arrow.triangle.2.circlepath") {
+                ScanButton("Format tag") {
                     showingConfirmation = true
                 }
             } footer: {
@@ -31,7 +31,7 @@ struct FormatToolView: View {
             .listRowBackground(Color.clear)
             .listRowInsets(EdgeInsets())
         }
-        .navigationTitle("Format memory")
+        .navigationTitle("Format tag")
         .navigationBarTitleDisplayMode(.inline)
         .confirmationDialog("Format this tag?", isPresented: $showingConfirmation, titleVisibility: .visible) {
             Button("Format tag", role: .destructive) {

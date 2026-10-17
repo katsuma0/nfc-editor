@@ -54,14 +54,13 @@ const SCREENS = (() => {
       onReturn: (ctx) => ctx.refresh(),
       build(ctx) {
         const wrap = el('div');
-        const hero = el('div', { class: 'hero' }, UI.icon('wave'), el('p', { text: 'Scan a tag to see its chip, serial number, memory and records.' }));
+        const hero = el('div', { class: 'hero' }, UI.icon('wave'));
         const scanSection = section({ cls: 'button', rows: [] });
-        scanSection.replaceChildren(hero, bigButton({ title: 'Scan tag', icon: 'wave', onClick: () => scan(ctx) }).firstChild);
+        scanSection.replaceChildren(hero, bigButton({ title: 'Scan tag for details', onClick: () => scan(ctx) }).firstChild);
         wrap.append(scanSection);
         if (STORE.scans.last) wrap.append(section({ header: 'Last scan', rows: [summaryRow(STORE.scans.last, ctx)] }));
         const recent = STORE.scans.history.slice(1);
         if (recent.length) wrap.append(section({ header: 'Recent', rows: recent.map((i) => summaryRow(i, ctx)) }));
-        if (STORE.scans.history.length) wrap.append(section({ rows: [buttonRow({ icon: 'table', title: 'Export scan log', onClick: () => UI.download('NFC scan log.csv', STORE.exportScanLogCSV(), 'text/csv') })], footer: 'A CSV file with the serial number, chip, record count and time of every scan in this session, for a spreadsheet.' }));
         if (!STORE.scans.last) wrap.append(textBlock('Scans are kept for this session. Save a tag from its details to keep it.'));
         return wrap;
       },
@@ -339,23 +338,25 @@ const SCREENS = (() => {
   };
 
   // Tools tab
-  // Grouped by the chips each tool talks to, like ToolsView.
+  // Everyday tools first, the rest behind Show advanced tools, like ToolsView.
+  const EVERYDAY_TOOLS = [
+    ['erase', 'Erase tag', 'Remove every record from a tag.', 'eraser', () => eraseTool()],
+    ['copy', 'Copy tag', 'Read one tag and write it to another.', 'docs', () => copyTool()],
+    ['password', 'Password', 'Protect a tag with a password, or remove one.', 'key', () => passwordTool()],
+    ['lock', 'Lock tag', 'Make a tag read only for good.', 'lock', () => lockTool()],
+    ['format', 'Format tag', 'Prepare a blank or damaged tag for writing.', 'format', () => formatTool()],
+    ['signature', 'Check if genuine', 'Read the NXP signature to spot a cloned chip.', 'seal', () => signatureTool()],
+  ];
   const TOOL_GROUPS = [
-    { header: 'Any tag', tools: [
-      ['erase', 'Erase tag', 'Remove every record from a tag.', 'eraser', () => eraseTool()],
-      ['copy', 'Copy tag', 'Read one tag and write it to another.', 'docs', () => copyTool()],
-      ['lock', 'Lock tag', 'Make a tag read only for good.', 'lock', () => lockTool()],
+    { header: 'Memory', tools: [
       ['memory', 'Memory editor', 'Read and edit memory page by page.', 'memorychip', () => memoryEditorTool()],
-      ['format', 'Format memory', 'Prepare a blank or damaged tag for NDEF.', 'format', () => formatTool()],
       ['dump', 'Write dump', 'Write a saved memory dump to a tag.', 'docdown', () => writeDumpTool()],
       ['advanced', 'Advanced commands', 'Send raw commands to the chip.', 'terminal', () => advancedTool()],
     ] },
     { header: 'NTAG and Ultralight', footer: 'These tools talk to NXP NTAG and MIFARE Ultralight chips. Each screen says which models it needs.', tools: [
-      ['password', 'Password', 'Protect a tag with a password, or remove one.', 'key', () => passwordTool()],
       ['counter', 'Counter', 'Read the tag counter or switch it on and off.', 'number', () => counterTool()],
       ['mirror', 'Mirror', 'Put the serial number or scan count into a link.', 'linkplus', () => mirrorTool()],
       ['lockpages', 'Lock pages', 'See which pages are locked and lock chosen ones.', 'lockstack', () => lockPagesTool()],
-      ['signature', 'Signature', 'Check that the chip is a genuine NXP chip.', 'seal', () => signatureTool()],
       ['ulc', 'Ultralight C key', 'Test, set or remove the 3DES key.', 'key', () => ultralightCTool()],
     ] },
     { header: 'DESFire', tools: [['desfire', 'DESFire card', 'List applications, format, or set up NDEF.', 'creditcard', () => desfireTool()]] },
@@ -368,7 +369,11 @@ const SCREENS = (() => {
       right: () => [settingsButton()],
       build(ctx) {
         const wrap = el('div');
-        for (const g of TOOL_GROUPS) wrap.append(section({ header: g.header, rows: g.tools.map(([id, title, subtitle, icon, make]) => row({ icon, iconBg: iconColorFor(id), title, subtitle, subtitleWrap: true, onClick: () => ctx.nav.push(make()) })), footer: g.footer }));
+        const toolRow = ([id, title, subtitle, icon, make]) => row({ icon, iconBg: iconColorFor(id), title, subtitle, subtitleWrap: true, onClick: () => ctx.nav.push(make()) });
+        const s = STORE.settings;
+        wrap.append(section({ rows: EVERYDAY_TOOLS.map(toolRow) }));
+        wrap.append(section({ rows: [buttonRow({ title: s.showAdvancedTools ? 'Hide advanced tools' : 'Show advanced tools', onClick: () => { s.showAdvancedTools = !s.showAdvancedTools; STORE.saveSettings(); ctx.refresh(); } })], footer: s.showAdvancedTools ? null : 'Memory editor, raw commands, dumps, counters, mirroring, page locks, and tools for DESFire, ISO 15693 and FeliCa chips.' }));
+        if (s.showAdvancedTools) for (const g of TOOL_GROUPS) wrap.append(section({ header: g.header, rows: g.tools.map(toolRow), footer: g.footer }));
         return wrap;
       },
     };
@@ -499,7 +504,7 @@ const SCREENS = (() => {
     };
   }
   function formatTool() {
-    return toolScreen('Format memory', () => {
+    return toolScreen('Format tag', () => {
       const wrap = el('div');
       wrap.append(section({ rows: [row({ icon: 'format', iconBg: '#AF52DE', title: 'What it does', subtitle: 'Writes the capability container if page 3 is blank, puts an empty NDEF record at page 4, and zeros the rest of the user memory. Works on NTAG, Ultralight and ICODE tags.', subtitleWrap: true, accessory: 'none' })], footer: 'Page 3 can only be written once per tag, so the app never touches it unless it reads as all zeros.' }));
       wrap.append(bigButton({ title: 'Format tag', icon: 'format', onClick: async () => {
@@ -664,7 +669,7 @@ const SCREENS = (() => {
   function signatureTool() {
     let result = null;
     return {
-      title: 'Signature',
+      title: 'Check if genuine',
       build(ctx) {
         const wrap = el('div');
         if (!result) wrap.append(section({ rows: [row({ title: 'Not read yet', subtitle: "NXP signs every NTAG 213, 215, 216 and MIFARE Ultralight EV1 chip with a 32-byte originality signature tied to its serial number. The app checks it against NXP's public key to tell a genuine NXP chip from a clone.", subtitleWrap: true, accessory: 'none' })] }));
@@ -1231,15 +1236,25 @@ const SCREENS = (() => {
     UI.sheet({ title: 'Settings', cancelTitle: 'Done', build(ctx) {
       const s = STORE.settings;
       const wrap = el('div');
-      wrap.append(section({ header: 'Scanning', rows: [
-        toggleRow({ title: 'Read full memory on scan', subtitle: 'Slower, but saves a dump with every tag.', value: s.readFullMemoryOnScan, onChange: (v) => { s.readFullMemoryOnScan = v; STORE.saveSettings(); } }),
+      wrap.append(section({ rows: [
         toggleRow({ title: 'Verify after write', value: s.verifyAfterWrite, onChange: (v) => { s.verifyAfterWrite = v; STORE.queue.options.verifyAfterWrite = v; STORE.saveSettings(); STORE.saveQueue(); } }),
-        fieldRow({ label: 'Default text language', value: s.defaultLanguage, placeholder: 'en', maxLength: 5, onInput: (v) => { s.defaultLanguage = v.trim() || 'en'; STORE.saveSettings(); } }),
-      ] }));
-      wrap.append(section({ header: 'Phone', rows: [
-        toggleRow({ title: 'Haptics', value: s.hapticsEnabled, onChange: (v) => { s.hapticsEnabled = v; STORE.saveSettings(); } }),
+        toggleRow({ title: 'Haptic feedback', value: s.hapticsEnabled, onChange: (v) => { s.hapticsEnabled = v; STORE.saveSettings(); } }),
         toggleRow({ title: 'Keep screen awake', value: s.keepScreenAwake, onChange: (v) => { s.keepScreenAwake = v; STORE.saveSettings(); UI.applyWakeLock && UI.applyWakeLock(v); } }),
-      ] }));
+      ], footer: 'Verify reads the tag back after every write and checks that each byte landed.' }));
+      const n = STORE.scans.history.length;
+      wrap.append(section({ header: 'Scan history', rows: [
+        buttonRow({ icon: 'table', title: 'Export scan log', disabled: !n, onClick: () => UI.download('NFC scan log.csv', STORE.exportScanLogCSV(), 'text/csv') }),
+        buttonRow({ icon: 'trash', title: 'Clear scan history', destructive: true, disabled: !n, onClick: async () => { if (await UI.confirm({ title: 'Clear the scan history?', confirmTitle: 'Clear scan history', destructive: true })) { STORE.clearScans(); ctx.refresh(); } } }),
+      ], footer: n === 0 ? 'No scans yet. The last 20 scans are kept until you close the app. Saved tags are not affected.' : `${n === 1 ? '1 scan' : n + ' scans'}. Exports as a spreadsheet with serial number, chip, record count and time.` }));
+      wrap.append(section({ rows: [buttonRow({ title: s.showAdvancedSettings ? 'Hide advanced settings' : 'Show advanced settings', onClick: () => { s.showAdvancedSettings = !s.showAdvancedSettings; STORE.saveSettings(); ctx.refresh(); } })] }));
+      if (s.showAdvancedSettings) {
+        wrap.append(section({ header: 'Scanning', rows: [
+          toggleRow({ title: 'Read full memory when scanning', value: s.readFullMemoryOnScan, onChange: (v) => { s.readFullMemoryOnScan = v; STORE.saveSettings(); } }),
+        ], footer: 'Shows every page of the chip and lets you save a complete dump. Large tags take a little longer.' }));
+        wrap.append(section({ header: 'Writing', rows: [
+          fieldRow({ label: 'Default text language', value: s.defaultLanguage, placeholder: 'en', maxLength: 5, onInput: (v) => { s.defaultLanguage = v.trim() || 'en'; STORE.saveSettings(); } }),
+        ], footer: 'Two-letter language code for new text records, for example en or fr.' }));
+      }
       wrap.append(section({ header: 'Preview', rows: [
         selectRow({ title: 'Simulated tag', value: UI.nfc.selectedTagId, options: SIM.list().map((t) => ({ value: t.id, label: t.name })), onChange: (v) => { UI.nfc.selectedTagId = v; } }),
         buttonRow({ icon: 'format', title: 'Reset simulated tags', onClick: async () => { if (await UI.confirm({ title: 'Reset the pretend tags?', message: 'Every simulated tag goes back to its factory state.', confirmTitle: 'Reset', destructive: true })) { SIM.reset(); UI.alert({ title: 'Done', message: 'The tags are back to how they started.' }); } } }),

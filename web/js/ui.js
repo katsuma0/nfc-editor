@@ -180,7 +180,7 @@ const UI = (() => {
   }
   function buttonRow(o) { return row({ iconPlain: o.icon, iconColor: o.destructive ? 'var(--red)' : null, title: o.title, subtitle: o.subtitle, onClick: o.onClick, destructive: o.destructive, blue: !o.destructive, center: o.center, accessory: 'none', disabled: o.disabled }); }
   function bigButton(o) {
-    const b = el('button', { class: 'big-button' + (o.destructive ? ' destructive' : ''), type: 'button', onClick: () => { haptic('tap'); o.onClick(); } }, o.icon ? icon(o.icon) : null, el('span', { text: o.title }));
+    const b = el('button', { class: 'big-button' + (o.destructive ? ' destructive' : ''), type: 'button', onClick: () => { haptic('tap'); o.onClick(); } }, el('span', { text: o.title }));
     b.disabled = !!o.disabled;
     if (o.scan !== false) { b.dataset.scan = o.disabled ? 'off' : '1'; b.disabled = b.disabled || nfc.isBusy; }
     return el('div', { class: 'section button' }, b);

@@ -35,7 +35,7 @@ struct UltralightCToolView: View {
             }
 
             Section {
-                ScanButton("Test key", systemImage: "checkmark.shield") {
+                ScanButton("Test key") {
                     testKey()
                 }
             } footer: {
@@ -73,7 +73,7 @@ struct UltralightCToolView: View {
             }
 
             Section {
-                ScanButton("Set key and protection", systemImage: "key.horizontal") {
+                ScanButton("Set key and protection") {
                     confirmSetKey()
                 }
             } footer: {
@@ -83,7 +83,7 @@ struct UltralightCToolView: View {
             .listRowInsets(EdgeInsets())
 
             Section {
-                ScanButton("Remove protection", systemImage: "lock.open") {
+                ScanButton("Remove protection") {
                     removeProtection()
                 }
             } footer: {

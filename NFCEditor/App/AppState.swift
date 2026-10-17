@@ -48,6 +48,11 @@ final class AppState {
         }
     }
 
+    func clearScanHistory() {
+        scanHistory = []
+        lastScan = nil
+    }
+
     /// The scan log as CSV, newest first: serial number, chip, record count and scan time (ISO 8601).
     /// Lines end in CRLF as RFC 4180 asks, which spreadsheet apps on every platform accept.
     func exportScanLogCSV() -> String {

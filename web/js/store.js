@@ -4,7 +4,7 @@ const STORE = (() => {
   const write = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* private mode or full */ } };
   const uuid = NDEF.uuid;
 
-  const settings = Object.assign({ hapticsEnabled: true, verifyAfterWrite: true, defaultLanguage: 'en', readFullMemoryOnScan: true, keepScreenAwake: false, simulatedTag: 'ntag216-blank', commandHistory: [] }, read('nfce.settings', {}));
+  const settings = Object.assign({ hapticsEnabled: true, verifyAfterWrite: true, defaultLanguage: 'en', readFullMemoryOnScan: true, keepScreenAwake: false, simulatedTag: 'ntag216-blank', commandHistory: [], showAdvancedSettings: false, showAdvancedTools: false }, read('nfce.settings', {}));
   const saveSettings = () => write('nfce.settings', settings);
   const addCommandToHistory = (hex) => { const h = hex.trim().toUpperCase(); if (!h) return; settings.commandHistory = [h, ...settings.commandHistory.filter((x) => x !== h)].slice(0, 50); saveSettings(); };
   const clearCommandHistory = () => { settings.commandHistory = []; saveSettings(); };
@@ -43,10 +43,11 @@ const STORE = (() => {
 
   const scans = { last: null, history: [] };
   const recordScan = (info) => { scans.last = info; scans.history = [info, ...scans.history].slice(0, 20); };
+  const clearScans = () => { scans.last = null; scans.history = []; };
   // Same columns as AppState.exportScanLogCSV: serial, chip, record count, ISO 8601 time. Fields with a comma,
   // a quote or a line break are quoted so spreadsheets keep them in one cell.
   const csvField = (v) => { const t = String(v); return /[",\r\n]/.test(t) ? '"' + t.replace(/"/g, '""') + '"' : t; };
   const exportScanLogCSV = () => ['Serial,Chip,Records,Scanned at', ...scans.history.map((i) => [SIM.info.serialLine(i), SIM.info.chipLine(i), i.records.length, i.scannedAt].map(csvField).join(','))].join('\r\n') + '\r\n';
 
-  return { settings, saveSettings, addCommandToHistory, clearCommandHistory, get items() { return items; }, add, update, remove, item, duplicate, makeTag, makeProfile, itemRecords, itemInfo, subtitle, exportText, importText, queue, saveQueue, queueRecords, queueBytes, scans, recordScan, exportScanLogCSV, uuid };
+  return { settings, saveSettings, addCommandToHistory, clearCommandHistory, get items() { return items; }, add, update, remove, item, duplicate, makeTag, makeProfile, itemRecords, itemInfo, subtitle, exportText, importText, queue, saveQueue, queueRecords, queueBytes, scans, recordScan, clearScans, exportScanLogCSV, uuid };
 })();
