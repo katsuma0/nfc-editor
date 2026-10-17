@@ -363,6 +363,7 @@ private struct PageEditorSheet: View {
     @State private var bytes: Data
     @State private var alert: AlertItem?
     @State private var showingLockConfirmation = false
+    @State private var showingWriteConfirmation = false
 
     private let page: MemoryPage
     private let pageSize: Int
@@ -430,7 +431,12 @@ private struct PageEditorSheet: View {
 
                 Section {
                     ScanButton(isType5 ? "Write block" : "Write page") {
-                        write()
+                        // Pages with a caution hold lock, configuration or serial bytes, so a wrong write may not be undoable.
+                        if warning != nil {
+                            showingWriteConfirmation = true
+                        } else {
+                            write()
+                        }
                     }
                     .disabled(bytes.count != pageSize || locked)
                 } footer: {
@@ -460,6 +466,14 @@ private struct PageEditorSheet: View {
                         dismiss()
                     }
                 }
+            }
+            .confirmationDialog(isType5 ? "Write this block?" : "Write this page?", isPresented: $showingWriteConfirmation, titleVisibility: .visible) {
+                Button(isType5 ? "Write block" : "Write page", role: .destructive) {
+                    write()
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text(warning ?? "The new bytes replace the ones on the tag.")
             }
             .confirmationDialog("Lock block \(page.index) for good?", isPresented: $showingLockConfirmation, titleVisibility: .visible) {
                 Button("Lock block", role: .destructive) {
