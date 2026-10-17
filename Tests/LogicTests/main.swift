@@ -314,5 +314,13 @@ do {
     check(false, "codable threw \(error)")
 }
 
+checkCrypto()
+
+checkNTAG()
+
+checkDESFire()
+
+checkType5FeliCa()
+
 print("\(passes) passed, \(failures) failed")
 exit(failures == 0 ? 0 : 1)

@@ -146,6 +146,7 @@ public protocol NFCISO15693Tag: NFCNDEFTag {
     func extendedWriteSingleBlock(requestFlags: NFCISO15693RequestFlag, blockNumber: Int, dataBlock: Data) async throws
     func extendedLockBlock(requestFlags: NFCISO15693RequestFlag, blockNumber: Int) async throws
     func getMultipleBlockSecurityStatus(requestFlags: NFCISO15693RequestFlag, blockRange: NSRange) async throws -> [NSNumber]
+    func extendedGetMultipleBlockSecurityStatus(requestFlags: NFCISO15693RequestFlag, blockRange: NSRange) async throws -> [NSNumber]
     func writeAFI(requestFlags: NFCISO15693RequestFlag, afi: UInt8) async throws
     func lockAFI(requestFlags: NFCISO15693RequestFlag) async throws
     func writeDSFID(requestFlags: NFCISO15693RequestFlag, dsfid: UInt8) async throws
