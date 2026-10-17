@@ -172,7 +172,7 @@ const UI = (() => {
   function bigButton(o) {
     const b = el('button', { class: 'big-button' + (o.destructive ? ' destructive' : ''), type: 'button', onClick: () => { haptic('tap'); o.onClick(); } }, o.icon ? icon(o.icon) : null, el('span', { text: o.title }));
     b.disabled = !!o.disabled;
-    if (o.scan !== false) { b.dataset.scan = '1'; b.disabled = b.disabled || nfc.isBusy; }
+    if (o.scan !== false) { b.dataset.scan = o.disabled ? 'off' : '1'; b.disabled = b.disabled || nfc.isBusy; }
     return el('div', { class: 'section button' }, b);
   }
   function segmented(o) {
@@ -376,7 +376,7 @@ const UI = (() => {
     get selectedTagId() { return STORE.settings.simulatedTag || 'ntag216-blank'; },
     set selectedTagId(v) { STORE.settings.simulatedTag = v; STORE.saveSettings(); },
     onBusy(fn) { busyListeners.push(fn); },
-    setBusy(v) { nfc.isBusy = v; document.querySelectorAll('button[data-scan]').forEach((b) => { b.disabled = v; }); busyListeners.forEach((fn) => fn(v)); },
+    setBusy(v) { nfc.isBusy = v; document.querySelectorAll('button[data-scan="1"]').forEach((b) => { b.disabled = v; }); busyListeners.forEach((fn) => fn(v)); },
     run(o) {
       if (nfc.isBusy) return Promise.reject(SIM.E.failed('Another NFC operation is in progress.'));
       nfc.setBusy(true);

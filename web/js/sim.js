@@ -42,7 +42,7 @@ const SIM = (() => {
     ntag216: type2('NTAG216', 'ntag21x', { totalPages: 231, userRange: [4, 225], userMemoryBytes: 888, configPage: 0xE3, dynamicLockPage: 0xE2, cc: [0xE1, 0x10, 0x6D, 0x00], supportsPassword: true, supportsCounter: true, counterCount: 1, supportsSignature: true, version: '0004040201001303' }),
     ul21: type2('MIFARE Ultralight EV1 (MF0UL21)', 'ultralightEV1', { totalPages: 41, userRange: [4, 35], userMemoryBytes: 128, configPage: 0x25, dynamicLockPage: 0x24, cc: [0xE1, 0x10, 0x10, 0x00], supportsPassword: true, supportsCounter: true, counterCount: 3, supportsSignature: true, version: '0004030101000E03' }),
     ntag203: type2('NTAG203', 'ntag203', { totalPages: 42, userRange: [4, 39], userMemoryBytes: 144, dynamicLockPage: 0x28, cc: [0xE1, 0x10, 0x12, 0x00], version: null }),
-    classic: type2('Unsupported MIFARE tag', 'mifareClassic', { totalPages: null, userRange: null, userMemoryBytes: null, supportsRawPages: false, atqa: 0x0004, sak: 0x08, notes: 'iOS cannot read this tag. MIFARE Classic is not supported.', version: null }),
+    classic: type2('Unsupported MIFARE tag', 'mifareClassic', { manufacturer: 'Unknown', totalPages: null, userRange: null, userMemoryBytes: null, supportsRawPages: false, atqa: 0x0004, sak: 0x08, notes: 'iOS cannot read this tag. MIFARE Classic is not supported.', version: null }),
     desfire: { name: 'MIFARE DESFire EV1 4K', manufacturer: 'NXP', family: 'desfire', nfcForumType: 4, isoStandard: 'ISO 14443-4A', pageSize: 1, totalPages: null, userRange: null, userMemoryBytes: 4096, supportsPassword: false, supportsCounter: false, counterCount: 0, supportsSignature: false, supportsRawPages: false, atqa: 0x0344, sak: 0x20, notes: null, cc: null, configPage: null, dynamicLockPage: null },
     slix: { name: 'ICODE SLIX', manufacturer: 'NXP', family: 'icodeSLIX', nfcForumType: 5, isoStandard: 'ISO 15693', pageSize: 4, totalPages: 28, userRange: [0, 27], userMemoryBytes: 112, supportsPassword: false, supportsCounter: false, counterCount: 0, supportsSignature: false, supportsRawPages: true, atqa: null, sak: null, notes: null, cc: null, configPage: null, dynamicLockPage: null },
     felica: { name: 'FeliCa (NDEF)', manufacturer: 'Sony', family: 'feliCa', nfcForumType: 3, isoStandard: 'ISO 18092 (JIS X 6319-4)', pageSize: 16, totalPages: null, userRange: null, userMemoryBytes: null, supportsPassword: false, supportsCounter: false, counterCount: 0, supportsSignature: false, supportsRawPages: false, atqa: null, sak: null, notes: null, cc: null, configPage: null, dynamicLockPage: null },
@@ -232,7 +232,7 @@ const SIM = (() => {
     custom(flags, code, params) { if (code === 0x2B) return NDEF.concat(U8(0x00, 0x0F), this.uid.slice().reverse(), U8(0x00, 0x00, 27, 0x03, 0x01)); if (code === 0x20 && params.length) return this.readBlock(params[0]); throw E.command('The tag did not answer command 0x' + code.toString(16).toUpperCase() + '.'); }
     userBytes() { return NDEF.concat(...this.blocks.slice(1)); }
     ndefStatus() { if (this.blocks[0][0] !== 0xE1 && this.blocks[0][0] !== 0xE2) return 'notSupported'; return (this.blocks[0][1] & 0x0F) === 0x0F || this.locked.slice(1).every(Boolean) ? 'readOnly' : 'readWrite'; }
-    ndefCapacity() { return this.blocks[0][2] * 8 - 4; }
+    ndefCapacity() { return Math.min(this.blocks[0][2] * 8, 108) - 4; }
     readNDEF() { if (this.ndefStatus() === 'notSupported') throw E.notNDEFFormatted(); const m = NDEF.messageFromTLV(this.userBytes()); return m && m.length ? NDEF.decode(m) : []; }
     writeNDEF(records) {
       const st = this.ndefStatus(); if (st === 'notSupported') throw E.notNDEFFormatted(); if (st === 'readOnly') throw E.readOnly();
@@ -261,15 +261,16 @@ const SIM = (() => {
     restore(s) { if (!s) return; this.records = (s.records || []).map(restoreRecord); this.readOnly = !!s.readOnly; }
   }
 
+  const unsupportedClassic = () => E.unsupportedTag('iOS cannot read MIFARE Classic tags.');
   class ClassicTag {
     constructor(id, name, uidHex) { this.id = id; this.name = name; this.kind = 'classic'; this.chipKey = 'classic'; this.spec = CHIPS.classic; this.uid = FH(uidHex); }
     sessionStart() {}
     command() { throw E.nak(0x00); }
     ndefStatus() { return 'notSupported'; }
     ndefCapacity() { return 0; }
-    readNDEF() { throw E.notNDEFFormatted(); }
-    writeNDEF() { throw E.notNDEFFormatted(); }
-    writeLock() { throw E.notNDEFFormatted(); }
+    readNDEF() { throw unsupportedClassic(); }
+    writeNDEF() { throw unsupportedClassic(); }
+    writeLock() { throw unsupportedClassic(); }
     serialize() { return {}; }
     restore() {}
   }
@@ -283,6 +284,7 @@ const SIM = (() => {
   function makeCatalog() {
     return [
       new Type2Tag('ntag216-blank', 'NTAG216, blank', 'ntag216', '04583A62956781', null),
+      new Type2Tag('ntag213-blank', 'NTAG213, blank', 'ntag213', '041A2B3C4D5E6F', null),
       new Type2Tag('ntag215-link', 'NTAG215 with a link', 'ntag215', '04A1B2C3D4E5F6', (t) => t.writeNDEF([NDEF.build.uri('https://katsuma.ca'), NDEF.build.text('Scanned from a denim card', 'en')])),
       new Type2Tag('ntag216-card', 'NTAG216, contact and Wi-Fi', 'ntag216', '04112233445566', (t) => t.writeNDEF([sampleCard(), NDEF.build.wifi({ ssid: 'Workshop', password: 'indigo2026', auth: 'wpa2PSK', encryption: 'aes' })])),
       new Type2Tag('ntag213-locked', 'NTAG213, locked', 'ntag213', '04778899AABBCC', (t) => { t.writeNDEF([NDEF.build.uri('https://example.com/menu')]); t.writeLock(); }),
@@ -393,6 +395,7 @@ const SIM = (() => {
     async writeRecords(session, tag, records, options = {}) {
       if (!records.length) throw E.input('Add at least one record.');
       session.alertMessage = 'Checking the tag.'; await session.delay(250);
+      if (tag.kind === 'classic') throw unsupportedClassic();
       let status = tag.ndefStatus();
       if (status === 'notSupported' && tag.kind === 'type2' && tag.spec.cc && tag.pages[3].every((b) => b === 0)) {
         await ops.format(session, tag); status = tag.ndefStatus();
@@ -413,6 +416,7 @@ const SIM = (() => {
     },
     async erase(session, tag, zeroUserMemory) {
       session.alertMessage = 'Checking the tag.'; await session.delay(250);
+      if (tag.kind === 'classic') throw unsupportedClassic();
       const status = tag.ndefStatus();
       if (status === 'readOnly') throw E.readOnly();
       if (status === 'notSupported') throw E.notNDEFFormatted();
@@ -423,6 +427,7 @@ const SIM = (() => {
     },
     async lock(session, tag) {
       session.alertMessage = 'Checking the tag.'; await session.delay(250);
+      if (tag.kind === 'classic') throw unsupportedClassic();
       const status = tag.ndefStatus();
       if (status === 'notSupported') throw E.notNDEFFormatted();
       if (status === 'readOnly') throw E.readOnly();
@@ -568,7 +573,7 @@ const SIM = (() => {
   // Display helpers for TagInfo (same strings as TagInfo.swift)
   const info = {
     typeLine: (i) => i.chip.isoStandard + (i.chip.nfcForumType ? ` (NFC Forum Type ${i.chip.nfcForumType})` : ''),
-    chipLine: (i) => `${i.chip.manufacturer} ${i.chip.name}`.trim(),
+    chipLine: (i) => { const m = (i.chip.manufacturer || '').trim(); return !m || m === 'Unknown' || i.chip.name.startsWith(m) ? i.chip.name : `${m} ${i.chip.name}`; },
     serialLine: (i) => (i.uid.match(/.{2}/g) || []).join(':'),
     memoryLine: (i) => (i.chip.totalPages ? `${i.chip.totalPages * i.chip.pageSize} bytes : ${i.chip.totalPages} pages (${i.chip.pageSize} bytes each)` : null),
     sizeLine: (i) => (i.ndefCapacity != null ? `${i.ndefUsedBytes || 0} / ${i.ndefCapacity} bytes (${Math.round(((i.ndefUsedBytes || 0) / i.ndefCapacity) * 100)}%)` : null),
