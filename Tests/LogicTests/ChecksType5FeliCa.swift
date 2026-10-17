@@ -273,8 +273,9 @@ private final class FakeISO15693Tag: NFCISO15693Tag, @unchecked Sendable {
     var identifier: Data { Data([0x78, 0x56, 0x34, 0x12, 0x00, 0x01, 0x04, 0xE0]) }
     var icManufacturerCode: Int { 4 }
     var icSerialNumber: Data { Data() }
-    func getSystemInfo(requestFlags: NFCISO15693RequestFlag) async throws -> (Int, Int, Int, Int, Int) { (0, 0, 4, memory.count, 1) }
-    func getSystemInfoAndUID(requestFlags: NFCISO15693RequestFlag) async throws -> (Data?, Int, Int, Int, Int, Int) { (nil, 0, 0, 4, memory.count, 1) }
+    func getSystemInfo(requestFlags: NFCISO15693RequestFlag, completionHandler: @escaping (Int, Int, Int, Int, Int, (any Error)?) -> Void) {
+        completionHandler(0, 0, 4, memory.count, 1, nil)
+    }
 
     func readSingleBlock(requestFlags: NFCISO15693RequestFlag, blockNumber: UInt8) async throws -> Data {
         log.append("read \(blockNumber)")
