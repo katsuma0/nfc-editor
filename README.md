@@ -40,6 +40,10 @@ docs/        App Store listing, privacy policy, review notes, release checklist,
 
 `docs/ARCHITECTURE.md` explains how a scan flows through the layers.
 
+## Web preview
+
+`web/` is a static copy of the app's screens for trying the UI and UX in a browser before Xcode: same four tabs, same tools, iOS look, no build step. Tags are simulated. The scan sheet presents one of a dozen pretend chips (blank NTAG216, a locked NTAG213, a password protected NTAG215, DESFire, ICODE, FeliCa, a MIFARE Classic that iOS cannot read) and they keep their state in the browser, so a write shows up on the next read, a lock sticks, and a password has to be entered. GitHub Pages serves it from `main` through `.github/workflows/pages.yml`; the first deploy needs Pages switched to the GitHub Actions source once under Settings, Pages. Add it to the home screen on an iPhone and it runs full screen like the app.
+
 ## Tests
 
 `Tests/run.sh` type-checks the NDEF and NFC layers against a small CoreNFC stub, syntax-parses every file, and runs 236 checks on the codec, record builders, parsers, drafts, chip identification and error mapping. It needs only a Swift toolchain, no Xcode, so it runs on Linux too. The SwiftUI layer is only syntax-checked there; Xcode is the type checker for that part.
