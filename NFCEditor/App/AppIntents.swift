@@ -14,7 +14,12 @@ struct ReadTagIntent: AppIntent {
 
     @MainActor
     func perform() async throws -> some IntentResult & ReturnsValue<String> {
-        let text = try await IntentRunner.readTag()
+        let text: String
+        do {
+            text = try await IntentRunner.readTag()
+        } catch {
+            throw IntentFailure(error)
+        }
         return .result(value: text)
     }
 }
@@ -79,7 +84,12 @@ struct WriteProfileIntent: AppIntent {
 
     @MainActor
     func perform() async throws -> some IntentResult & ReturnsValue<String> {
-        let text = try await IntentRunner.writeProfile(id: profile.id)
+        let text: String
+        do {
+            text = try await IntentRunner.writeProfile(id: profile.id)
+        } catch {
+            throw IntentFailure(error)
+        }
         return .result(value: text)
     }
 }
@@ -105,6 +115,20 @@ struct NFCEditorShortcuts: AppShortcutsProvider {
             shortTitle: "Write profile to tag",
             systemImageName: "square.and.pencil"
         )
+    }
+}
+
+/// Shortcuts shows the text of an error that conforms to CustomLocalizedStringResourceConvertible,
+/// so every failure is rethrown in that shape, with the same message the app's own alerts use.
+private struct IntentFailure: Error, CustomLocalizedStringResourceConvertible {
+    let message: String
+
+    init(_ error: Error) {
+        message = NFCEditorError.map(error).errorDescription ?? "The action failed."
+    }
+
+    var localizedStringResource: LocalizedStringResource {
+        "\(message)"
     }
 }
 

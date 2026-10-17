@@ -62,7 +62,8 @@ struct SavedItem: Codable, Identifiable, Hashable {
     /// Counts what goes onto the tag, so a Bluetooth draft with handover on counts as two records.
     private var recordCount: Int {
         if kind == .profile, records.isEmpty {
-            return drafts.count
+            // An invalid draft still stands for the record the user means to write, so it counts as one.
+            return drafts.reduce(0) { $0 + ((try? RecordDraft.buildAll($1))?.count ?? 1) }
         }
         return records.count
     }
