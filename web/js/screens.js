@@ -127,7 +127,7 @@ const SCREENS = (() => {
       right: () => [navButton({ icon: 'share', label: 'Share', onClick: () => UI.download('memory.bin', SIM.dumpFlat(dump), 'application/octet-stream') })],
       build() {
         const wrap = el('div');
-        wrap.append(section({ rows: dump.pages.map(pageRow) , footer: 'Pages in red could not be read. Use the memory editor in Tools to change a page.' }));
+        wrap.append(section({ rows: dump.pages.map((p) => pageRow(p)), footer: 'Pages in red could not be read. Use the memory editor in Tools to change a page.' }));
         return wrap;
       },
     };
@@ -320,7 +320,7 @@ const SCREENS = (() => {
         }
         const n = source.records.length;
         wrap.append(section({ header: 'Source', rows: [row({ icon: 'cpu', iconBg: '#636366', title: SIM.info.chipLine(source), subtitle: `${n === 1 ? '1 record' : n + ' records'}, ${UI.bytesLabel(source.ndefUsedBytes || 0)}`, accessory: 'none' }), ...source.records.map((r) => recordRow(r))] }));
-        if (source.dump && source.chip.supportsRawPages) wrap.append(section({ rows: [toggleRow({ title: 'Clone raw memory instead of records', value: cloneRaw, onChange: (v) => { cloneRaw = v; } })], footer: 'Raw cloning copies every user page, which only makes sense between two chips of the same type.' }));
+        if (source.dump && source.chip.supportsRawPages) wrap.append(section({ rows: [toggleRow({ title: 'Clone raw memory instead of records', value: cloneRaw, onChange: (v) => { cloneRaw = v; ctx.refresh(); } })], footer: 'Raw cloning copies every user page, which only makes sense between two chips of the same type.' }));
         wrap.append(bigButton({ title: 'Write to destination tag', icon: 'wave', disabled: !n && !cloneRaw, onClick: async () => {
           try {
             if (cloneRaw) { const written = await UI.nfc.run({ alertMessage: 'Hold your iPhone near the destination tag.', successMessage: 'Written.', body: (s, t) => SIM.ops.writeDump(s, t, source.dump, null, null) }); UI.success(`Wrote ${written} pages.`); }
