@@ -112,7 +112,7 @@ enum ISO15693Commands {
                 do {
                     let blocks: [Data]
                     if extended {
-                        blocks = try await tag.extendedReadMultipleBlocks(requestFlags: defaultFlags, blockRange: range)
+                        blocks = try await completion { tag.extendedReadMultipleBlocks(requestFlags: defaultFlags, blockRange: range, completionHandler: $0) }
                     } else {
                         blocks = try await tag.readMultipleBlocks(requestFlags: defaultFlags, blockRange: range)
                     }
@@ -154,7 +154,7 @@ enum ISO15693Commands {
         }
         try await withOptionRetry { flags in
             if index > lastShortBlock {
-                try await tag.extendedWriteSingleBlock(requestFlags: flags, blockNumber: index, dataBlock: bytes)
+                try await completion { tag.extendedWriteSingleBlock(requestFlags: flags, blockNumber: index, dataBlock: bytes, completionHandler: $0) }
             } else {
                 try await tag.writeSingleBlock(requestFlags: flags, blockNumber: UInt8(index), dataBlock: bytes)
             }
@@ -177,7 +177,7 @@ enum ISO15693Commands {
         try checkBlockIndex(index)
         try await withOptionRetry { flags in
             if index > lastShortBlock {
-                try await tag.extendedLockBlock(requestFlags: flags, blockNumber: index)
+                try await completion { tag.extendedLockBlock(requestFlags: flags, blockNumber: index, completionHandler: $0) }
             } else {
                 try await tag.lockBlock(requestFlags: flags, blockNumber: UInt8(index))
             }
@@ -226,14 +226,14 @@ enum ISO15693Commands {
     private static func securityStatus(_ tag: NFCISO15693Tag, from: Int, count: Int) async throws -> [NSNumber] {
         let range = NSRange(location: from, length: count)
         if from > lastShortBlock {
-            return try await tag.extendedGetMultipleBlockSecurityStatus(requestFlags: defaultFlags, blockRange: range)
+            return try await completion { tag.extendedGetMultipleBlockSecurityStatus(requestFlags: defaultFlags, blockRange: range, completionHandler: $0) }
         }
-        return try await tag.getMultipleBlockSecurityStatus(requestFlags: defaultFlags, blockRange: range)
+        return try await completion { tag.getMultipleBlockSecurityStatus(requestFlags: defaultFlags, blockRange: range, completionHandler: $0) }
     }
 
     private static func readSingleBlock(_ tag: NFCISO15693Tag, index: Int) async throws -> Data {
         if index > lastShortBlock {
-            return try await tag.extendedReadSingleBlock(requestFlags: defaultFlags, blockNumber: index)
+            return try await completion { tag.extendedReadSingleBlock(requestFlags: defaultFlags, blockNumber: index, completionHandler: $0) }
         }
         return try await tag.readSingleBlock(requestFlags: defaultFlags, blockNumber: UInt8(index))
     }
@@ -288,27 +288,27 @@ enum ISO15693Commands {
 extension ISO15693Commands {
     static func writeAFI(_ tag: NFCISO15693Tag, afi: UInt8) async throws {
         try await withOptionRetry { flags in
-            try await tag.writeAFI(requestFlags: flags, afi: afi)
+            try await completion { tag.writeAFI(requestFlags: flags, afi: afi, completionHandler: $0) }
         }
     }
 
     /// Permanent: the AFI can never be changed again.
     static func lockAFI(_ tag: NFCISO15693Tag) async throws {
         try await withOptionRetry { flags in
-            try await tag.lockAFI(requestFlags: flags)
+            try await completion { tag.lockAFI(requestFlags: flags, completionHandler: $0) }
         }
     }
 
     static func writeDSFID(_ tag: NFCISO15693Tag, dsfid: UInt8) async throws {
         try await withOptionRetry { flags in
-            try await tag.writeDSFID(requestFlags: flags, dsfid: dsfid)
+            try await completion { tag.writeDSFID(requestFlags: flags, dsfid: dsfid, completionHandler: $0) }
         }
     }
 
     /// Permanent: the DSFID can never be changed again. Core NFC spells the command lockDFSID.
     static func lockDSFID(_ tag: NFCISO15693Tag) async throws {
         try await withOptionRetry { flags in
-            try await tag.lockDFSID(requestFlags: flags)
+            try await completion { tag.lockDFSID(requestFlags: flags, completionHandler: $0) }
         }
     }
 }
@@ -463,6 +463,27 @@ extension ISO15693Commands {
     private static func checkSTPassword(_ password: Data) throws {
         guard password.count == 8 else {
             throw NFCEditorError.invalidInput("An ST25TV password is exactly 8 bytes.")
+        }
+    }
+}
+
+// MARK: Completion handler bridges
+
+extension ISO15693Commands {
+    // The newer ISO 15693 calls are only guaranteed in their completion handler form across SDKs, so they are bridged here.
+    fileprivate static func completion<T>(_ start: (@escaping (T, Error?) -> Void) -> Void) async throws -> T {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<T, Error>) in
+            start { value, error in
+                if let error = error { continuation.resume(throwing: error) } else { continuation.resume(returning: value) }
+            }
+        }
+    }
+
+    fileprivate static func completion(_ start: (@escaping (Error?) -> Void) -> Void) async throws {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            start { error in
+                if let error = error { continuation.resume(throwing: error) } else { continuation.resume(returning: ()) }
+            }
         }
     }
 }
