@@ -16,5 +16,5 @@ echo "syntax-parsing every file"
 find NFCEditor -name '*.swift' -print0 | xargs -0 -n1 swiftc -parse
 echo "building logic tests"
 swiftc -swift-version 5 -I "$BUILD" -L "$BUILD" -lCoreNFC -o "$BUILD/logic-tests" \
-  NFCEditor/NDEF/*.swift NFCEditor/NFC/*.swift Tests/LogicTests/main.swift
+  NFCEditor/NDEF/*.swift NFCEditor/NFC/*.swift Tests/LogicTests/*.swift
 LD_LIBRARY_PATH="$BUILD:${LD_LIBRARY_PATH:-}" DYLD_LIBRARY_PATH="$BUILD:${DYLD_LIBRARY_PATH:-}" "$BUILD/logic-tests"

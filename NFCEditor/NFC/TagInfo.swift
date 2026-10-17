@@ -120,6 +120,8 @@ struct TagInfo: Codable, Hashable, Identifiable, Sendable {
     var counter: UInt32?
     var counterEnabled: Bool?
     var signature: Data?
+    var signatureVerdict: SignatureVerdict?
+    var tamperStatus: Data?
     var versionBytes: Data?
     var dump: MemoryDump?
     var extras: [TagField]
@@ -138,6 +140,8 @@ struct TagInfo: Codable, Hashable, Identifiable, Sendable {
         self.counter = nil
         self.counterEnabled = nil
         self.signature = nil
+        self.signatureVerdict = nil
+        self.tamperStatus = nil
         self.versionBytes = nil
         self.dump = nil
         self.extras = []

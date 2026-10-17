@@ -61,7 +61,9 @@ struct TagDetailView: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("The tag details, records and memory dump are kept in the Saved tab.")
+            Text(info.dump == nil
+                 ? "The tag details and records are kept in the Saved tab."
+                 : "The tag details, records and memory dump are kept in the Saved tab.")
         }
         .alertItem($alert)
     }
@@ -113,8 +115,14 @@ struct TagDetailView: View {
                 if let signature = info.signature {
                     signatureRow(signature)
                 }
+                if let tamper = info.tamperStatus {
+                    tamperRow(tamper)
+                }
+                if let mirror = mirrorField {
+                    row("Mirror", value: mirror.value, systemImage: mirror.systemImage)
+                }
                 // Extras are keyed by position so two fields with the same label never collide.
-                ForEach(Array(info.extras.enumerated()), id: \.offset) { entry in
+                ForEach(Array(otherExtras.enumerated()), id: \.offset) { entry in
                     row(entry.element.label, value: entry.element.value, systemImage: entry.element.systemImage)
                 }
                 row("Scanned", value: info.scannedAt.formatted(date: .abbreviated, time: .shortened), systemImage: "clock")
@@ -175,17 +183,39 @@ struct TagDetailView: View {
 
     private func signatureRow(_ signature: Data) -> some View {
         LabeledContent {
-            HStack(spacing: 12) {
-                Text(signaturePreview(signature))
-                    .font(.body.monospaced())
-                    .lineLimit(1)
-                Button("Copy") {
-                    copy(signature.hexString(separator: " "))
+            VStack(alignment: .trailing, spacing: 4) {
+                if let verdict = info.signatureVerdict {
+                    Text(TagDetailView.verdictText(verdict))
+                        .foregroundStyle(TagDetailView.verdictColor(verdict))
+                        .multilineTextAlignment(.trailing)
                 }
-                .buttonStyle(.borderless)
+                HStack(spacing: 12) {
+                    Text(signaturePreview(signature))
+                        .font(.body.monospaced())
+                        .lineLimit(1)
+                    Button("Copy") {
+                        copy(signature.hexString(separator: " "))
+                    }
+                    .buttonStyle(.borderless)
+                }
             }
         } label: {
-            Label("Signature", systemImage: "checkmark.seal")
+            Label("Signature", systemImage: signatureImage)
+        }
+    }
+
+    private func tamperRow(_ status: Data) -> some View {
+        LabeledContent {
+            VStack(alignment: .trailing, spacing: 4) {
+                Text(TagDetailView.tamperText(status))
+                    .foregroundStyle(TagDetailView.tamperColor(status))
+                    .multilineTextAlignment(.trailing)
+                Text(status.hexString(separator: " "))
+                    .font(.footnote.monospaced())
+                    .foregroundStyle(.secondary)
+            }
+        } label: {
+            Label("Tamper", systemImage: "bolt.shield")
         }
     }
 
@@ -216,6 +246,87 @@ struct TagDetailView: View {
             return enabled ? "Enabled" : "Disabled"
         }
         return nil
+    }
+
+    private var signatureImage: String {
+        switch info.signatureVerdict {
+        case .genuine?:
+            return "checkmark.seal.fill"
+        case .notGenuine?:
+            return "xmark.seal"
+        case .noKey?, nil:
+            return "checkmark.seal"
+        }
+    }
+
+    static func verdictText(_ verdict: SignatureVerdict) -> String {
+        switch verdict {
+        case .genuine:
+            return "Genuine NXP chip"
+        case .notGenuine:
+            return "Signature does not match NXP's key"
+        case .noKey:
+            return "No public key for this chip"
+        }
+    }
+
+    static func verdictFooter(_ verdict: SignatureVerdict) -> String {
+        switch verdict {
+        case .genuine:
+            return "The signature matches NXP's public key for this serial number."
+        case .notGenuine:
+            return "The signature does not match NXP's public key for this serial number. The chip is likely a clone."
+        case .noKey:
+            return "NXP has not published a public key for this chip, so the signature cannot be checked."
+        }
+    }
+
+    static func verdictColor(_ verdict: SignatureVerdict) -> Color {
+        switch verdict {
+        case .genuine:
+            return .green
+        case .notGenuine:
+            return .red
+        case .noKey:
+            return .secondary
+        }
+    }
+
+    /// READ_TT_STATUS answers a 4-byte message and a status byte: "C" for a closed loop, "O" for an open one,
+    /// "I" when the chip could not tell, for example because tamper detection is off.
+    static func tamperText(_ status: Data) -> String {
+        guard status.count >= 5 else { return "Unknown" }
+        switch status[status.startIndex + 4] {
+        case 0x43:
+            return "Wire intact"
+        case 0x4F:
+            return "Wire open, the tag was tampered with"
+        case 0x49:
+            return "Not determined"
+        default:
+            return "Unknown"
+        }
+    }
+
+    static func tamperColor(_ status: Data) -> Color {
+        guard status.count >= 5 else { return .secondary }
+        switch status[status.startIndex + 4] {
+        case 0x43:
+            return .green
+        case 0x4F:
+            return .red
+        default:
+            return .secondary
+        }
+    }
+
+    /// The mirror setting gets its own row next to the counter instead of sitting among the other extras.
+    private var mirrorField: TagField? {
+        info.extras.first { $0.label == "Mirror" }
+    }
+
+    private var otherExtras: [TagField] {
+        info.extras.filter { $0.label != "Mirror" }
     }
 
     private var recordsFooter: String {

@@ -217,7 +217,7 @@ check(RecordDraft(kind: .wifi, fields: [DraftKey.ssid: ""]).validate() != nil, "
 check(RecordDraft(kind: .raw, fields: [DraftKey.payloadHex: "0", DraftKey.payloadIsHex: "true"]).validate() != nil, "odd hex invalid")
 check(RecordDraft(kind: .empty).validate() == nil, "empty draft valid")
 check(RecordKind.writable.count >= 15, "writable kinds listed")
-check(!RecordKind.writable.contains(.unknown) && !RecordKind.writable.contains(.smartPoster), "writable excludes unknown and smart poster")
+check(!RecordKind.writable.contains(.unknown) && !RecordKind.writable.contains(.handover), "writable excludes unknown and handover")
 // Draft from a read record of each kind keeps the kind
 checkEqual(RecordDraft.from(record: textRecord).kind, RecordKind.text, "from text")
 checkEqual(RecordDraft.from(record: textRecord)[DraftKey.text], "Hello", "from text field")
@@ -313,6 +313,18 @@ do {
 } catch {
     check(false, "codable threw \(error)")
 }
+
+checkCrypto()
+
+checkNTAG()
+
+checkDESFire()
+
+checkType5FeliCa()
+
+checkNDEF2()
+
+checkTagInfo()
 
 print("\(passes) passed, \(failures) failed")
 exit(failures == 0 ? 0 : 1)

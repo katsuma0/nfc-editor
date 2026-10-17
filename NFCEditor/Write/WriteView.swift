@@ -13,6 +13,8 @@ struct WriteView: View {
     @State private var profileName = ""
     @State private var showingClearConfirmation = false
     @State private var showingLockConfirmation = false
+    @State private var writeSeveral = false
+    @State private var editMode: EditMode = .inactive
 
     var body: some View {
         NavigationStack {
@@ -46,6 +48,13 @@ struct WriteView: View {
                     } label: {
                         Label("More", systemImage: "ellipsis.circle")
                     }
+                }
+            }
+            .environment(\.editMode, $editMode)
+            .onChange(of: app.writeQueue.drafts.isEmpty) { _, isEmpty in
+                // Deleting the last record would otherwise leave the list editing with its Done button disabled.
+                if isEmpty {
+                    editMode = .inactive
                 }
             }
             .sheet(item: $sheet, onDismiss: { openEditorForPendingKind() }) { item in
@@ -116,7 +125,7 @@ struct WriteView: View {
     }
 
     private var optionsSection: some View {
-        Section("Options") {
+        Section {
             NavigationLink {
                 WriteOptionsView()
             } label: {
@@ -132,13 +141,27 @@ struct WriteView: View {
                         .foregroundStyle(Color.accentColor)
                 }
             }
+            Toggle(isOn: $writeSeveral) {
+                Label {
+                    Text("Write to several tags")
+                } icon: {
+                    Image(systemName: "square.stack.3d.up")
+                        .foregroundStyle(Color.accentColor)
+                }
+            }
+        } header: {
+            Text("Options")
+        } footer: {
+            if writeSeveral {
+                Text("The NFC sheet stays open after each tag. Hold the tags one after another, then tap Cancel when you are done. iOS closes the sheet after 60 seconds.")
+            }
         }
     }
 
     private var writeSection: some View {
         Section {
             VStack(spacing: 12) {
-                ScanButton("Write to tag") {
+                ScanButton(writeSeveral ? "Write to tags" : "Write to tag") {
                     startWrite()
                 }
                 .disabled(app.writeQueue.drafts.isEmpty)
@@ -152,10 +175,10 @@ struct WriteView: View {
                     }
                     Button("Cancel", role: .cancel) {}
                 } message: {
-                    Text("A locked tag can never be written or erased again.")
+                    Text(writeSeveral ? "Every tag you write in this session is locked. A locked tag can never be written or erased again." : "A locked tag can never be written or erased again.")
                 }
                 if app.writeQueue.options.lockAfterWrite {
-                    Label("The tag will be locked permanently.", systemImage: "lock.fill")
+                    Label(writeSeveral ? "Every tag will be locked permanently." : "The tag will be locked permanently.", systemImage: "lock.fill")
                         .font(.footnote)
                         .foregroundStyle(.red)
                 }
@@ -194,7 +217,7 @@ struct WriteView: View {
 
     private func newDraft(for kind: RecordKind) -> RecordDraft {
         var draft = RecordDraft(kind: kind)
-        if kind == .text {
+        if kind == .text || kind == .smartPoster {
             let language = app.settings.defaultLanguage
             if !language.isEmpty {
                 draft[DraftKey.language] = language
@@ -244,6 +267,10 @@ struct WriteView: View {
             return
         }
         let options = app.writeQueue.options
+        if writeSeveral {
+            writeBatch(records: records, options: options)
+            return
+        }
         Task { @MainActor in
             do {
                 let result = try await app.nfc.run(
@@ -264,6 +291,34 @@ struct WriteView: View {
                 alert = AlertItem(error: error)
             }
         }
+    }
+
+    /// One session for many tags: after each tag the sheet shows the running count and waits for the next one.
+    private func writeBatch(records: [NDEFRecord], options: WriteOptions) {
+        Task { @MainActor in
+            do {
+                let count = try await app.nfc.runBatch(alertMessage: "Hold your iPhone near the first tag.") { session, tag, handled in
+                    _ = try await TagOperations.writeRecords(session, tag, records: records, options: options)
+                    return "\(WriteView.writtenToTags(handled + 1)) Hold the next one."
+                }
+                if options.lockAfterWrite {
+                    app.writeQueue.options.lockAfterWrite = false
+                }
+                if count > 0 {
+                    Haptics.success()
+                }
+                alert = AlertItem.success(WriteView.writtenToTags(count))
+            } catch {
+                if NFCEditorError.map(error).isCancellation { return }
+                Haptics.error()
+                alert = AlertItem(error: error)
+            }
+        }
+    }
+
+    /// Nonisolated because the batch callback runs off the main actor.
+    nonisolated private static func writtenToTags(_ count: Int) -> String {
+        count == 1 ? "Written to 1 tag." : "Written to \(count) tags."
     }
 
     private static func successMessage(for result: WriteResult) -> String {

@@ -17,8 +17,8 @@ const STORE = (() => {
   const item = (id) => items.find((x) => x.id === id);
   const duplicate = (id) => { const src = item(id); if (!src) return null; const copy = JSON.parse(JSON.stringify(src)); copy.id = uuid(); copy.name = src.name + ' copy'; copy.createdAt = copy.updatedAt = new Date().toISOString(); return add(copy); };
   const makeTag = (name, info) => { const now = new Date().toISOString(); return { id: uuid(), name, kind: 'tag', createdAt: now, updatedAt: now, drafts: info.records.map((r) => NDEF.fromRecord(r)), records: info.records.map(SIM.serializeRecord), tagInfo: SIM.serializeInfo(info) }; };
-  const makeProfile = (name, drafts) => { const now = new Date().toISOString(); let records = []; try { records = drafts.map(NDEF.buildDraft).map(SIM.serializeRecord); } catch (e) { records = []; } return { id: uuid(), name, kind: 'profile', createdAt: now, updatedAt: now, drafts: JSON.parse(JSON.stringify(drafts)), records, tagInfo: null }; };
-  const itemRecords = (it) => { if (it.kind === 'profile') { try { return it.drafts.map(NDEF.buildDraft); } catch (e) { return []; } } return (it.records || []).map(SIM.restoreRecord); };
+  const makeProfile = (name, drafts) => { const now = new Date().toISOString(); let records = []; try { records = drafts.flatMap(NDEF.buildAll).map(SIM.serializeRecord); } catch (e) { records = []; } return { id: uuid(), name, kind: 'profile', createdAt: now, updatedAt: now, drafts: JSON.parse(JSON.stringify(drafts)), records, tagInfo: null }; };
+  const itemRecords = (it) => { if (it.kind === 'profile') { try { return it.drafts.flatMap(NDEF.buildAll); } catch (e) { return []; } } return (it.records || []).map(SIM.restoreRecord); };
   const itemInfo = (it) => (it.tagInfo ? SIM.restoreInfo(it.tagInfo) : null);
   const subtitle = (it) => { const recs = itemRecords(it); const n = recs.length; const parts = [n === 1 ? '1 record' : n + ' records', UI.bytesLabel(n ? NDEF.byteCount(recs) : 0)]; if (it.tagInfo) parts.push(it.tagInfo.chip.name); return parts.join(', '); };
   const exportText = (it) => JSON.stringify(it, null, 2);
@@ -38,11 +38,15 @@ const STORE = (() => {
   const queue = Object.assign({ drafts: [], options: { lockAfterWrite: false, verifyAfterWrite: true, eraseFirst: false } }, read('nfce.queue', {}));
   queue.options.lockAfterWrite = false;
   const saveQueue = () => write('nfce.queue', { drafts: queue.drafts, options: { lockAfterWrite: false, verifyAfterWrite: queue.options.verifyAfterWrite, eraseFirst: queue.options.eraseFirst } });
-  const queueRecords = () => queue.drafts.map(NDEF.buildDraft);
+  const queueRecords = () => queue.drafts.flatMap(NDEF.buildAll);
   const queueBytes = () => { try { return queue.drafts.length ? NDEF.byteCount(queueRecords()) : 0; } catch (e) { return queue.drafts.reduce((n, d) => n + NDEF.draftSize(d), 0); } };
 
   const scans = { last: null, history: [] };
   const recordScan = (info) => { scans.last = info; scans.history = [info, ...scans.history].slice(0, 20); };
+  // Same columns as AppState.exportScanLogCSV: serial, chip, record count, ISO 8601 time. Fields with a comma,
+  // a quote or a line break are quoted so spreadsheets keep them in one cell.
+  const csvField = (v) => { const t = String(v); return /[",\r\n]/.test(t) ? '"' + t.replace(/"/g, '""') + '"' : t; };
+  const exportScanLogCSV = () => ['Serial,Chip,Records,Scanned at', ...scans.history.map((i) => [SIM.info.serialLine(i), SIM.info.chipLine(i), i.records.length, i.scannedAt].map(csvField).join(','))].join('\r\n') + '\r\n';
 
-  return { settings, saveSettings, addCommandToHistory, clearCommandHistory, get items() { return items; }, add, update, remove, item, duplicate, makeTag, makeProfile, itemRecords, itemInfo, subtitle, exportText, importText, queue, saveQueue, queueRecords, queueBytes, scans, recordScan, uuid };
+  return { settings, saveSettings, addCommandToHistory, clearCommandHistory, get items() { return items; }, add, update, remove, item, duplicate, makeTag, makeProfile, itemRecords, itemInfo, subtitle, exportText, importText, queue, saveQueue, queueRecords, queueBytes, scans, recordScan, exportScanLogCSV, uuid };
 })();

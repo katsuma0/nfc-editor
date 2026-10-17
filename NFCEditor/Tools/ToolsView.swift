@@ -1,79 +1,19 @@
 import Foundation
 import SwiftUI
 
-/// Tools tab: one row per tag utility, each opening its own screen.
+/// Tools tab: one row per tag utility, grouped by the chips each tool talks to.
+@MainActor
 struct ToolsView: View {
     @State private var showingSettings = false
 
     var body: some View {
         NavigationStack {
             List {
-                Section {
-                    NavigationLink {
-                        EraseToolView()
-                    } label: {
-                        ToolRow(title: "Erase tag", description: "Remove every record from a tag.", systemImage: "trash")
-                    }
-                    NavigationLink {
-                        CopyToolView()
-                    } label: {
-                        ToolRow(title: "Copy tag", description: "Read one tag and write it to another.", systemImage: "doc.on.doc")
-                    }
-                    NavigationLink {
-                        LockToolView()
-                    } label: {
-                        ToolRow(title: "Lock tag", description: "Make a tag permanently read only.", systemImage: "lock")
-                    }
-                    NavigationLink {
-                        FormatToolView()
-                    } label: {
-                        ToolRow(title: "Format memory", description: "Prepare a blank or damaged tag for NDEF.", systemImage: "arrow.triangle.2.circlepath")
-                    }
-                } header: {
-                    Text("Tag")
-                }
-
-                Section {
-                    NavigationLink {
-                        MemoryEditorView()
-                    } label: {
-                        ToolRow(title: "Memory editor", description: "Read and edit memory page by page.", systemImage: "memorychip")
-                    }
-                    NavigationLink {
-                        WriteDumpView()
-                    } label: {
-                        ToolRow(title: "Write dump", description: "Write a saved memory dump to a tag.", systemImage: "arrow.down.doc")
-                    }
-                    NavigationLink {
-                        AdvancedCommandView()
-                    } label: {
-                        ToolRow(title: "Advanced commands", description: "Send raw commands to the chip.", systemImage: "terminal")
-                    }
-                } header: {
-                    Text("Memory")
-                }
-
-                Section {
-                    NavigationLink {
-                        PasswordToolView()
-                    } label: {
-                        ToolRow(title: "Password", description: "Protect a tag with a password, or remove one.", systemImage: "key")
-                    }
-                    NavigationLink {
-                        CounterToolView()
-                    } label: {
-                        ToolRow(title: "Counter", description: "Read the tag counter or switch it on and off.", systemImage: "number")
-                    }
-                    NavigationLink {
-                        SignatureToolView()
-                    } label: {
-                        ToolRow(title: "Signature", description: "Read the chip's originality signature.", systemImage: "checkmark.seal")
-                    }
-                } header: {
-                    Text("Chip")
-                } footer: {
-                    Text("Most tools work on NTAG and MIFARE Ultralight tags. Each screen says what its chip needs.")
-                }
+                anyTagSection
+                ntagSection
+                desfireSection
+                iso15693Section
+                feliCaSection
             }
             .listStyle(.insetGrouped)
             .navigationTitle("Tools")
@@ -89,6 +29,125 @@ struct ToolsView: View {
             .sheet(isPresented: $showingSettings) {
                 SettingsView()
             }
+        }
+    }
+
+    // MARK: Sections
+
+    private var anyTagSection: some View {
+        Section {
+            NavigationLink {
+                EraseToolView()
+            } label: {
+                ToolRow(title: "Erase tag", description: "Remove every record from a tag.", systemImage: "trash")
+            }
+            NavigationLink {
+                CopyToolView()
+            } label: {
+                ToolRow(title: "Copy tag", description: "Read one tag and write it to another.", systemImage: "doc.on.doc")
+            }
+            NavigationLink {
+                LockToolView()
+            } label: {
+                ToolRow(title: "Lock tag", description: "Make a tag read only for good.", systemImage: "lock")
+            }
+            NavigationLink {
+                MemoryEditorView()
+            } label: {
+                ToolRow(title: "Memory editor", description: "Read and edit memory page by page.", systemImage: "memorychip")
+            }
+            NavigationLink {
+                FormatToolView()
+            } label: {
+                ToolRow(title: "Format memory", description: "Prepare a blank or damaged tag for NDEF.", systemImage: "arrow.triangle.2.circlepath")
+            }
+            NavigationLink {
+                WriteDumpView()
+            } label: {
+                ToolRow(title: "Write dump", description: "Write a saved memory dump to a tag.", systemImage: "arrow.down.doc")
+            }
+            NavigationLink {
+                AdvancedCommandView()
+            } label: {
+                ToolRow(title: "Advanced commands", description: "Send raw commands to the chip.", systemImage: "terminal")
+            }
+        } header: {
+            Text("Any tag")
+        }
+    }
+
+    private var ntagSection: some View {
+        Section {
+            NavigationLink {
+                PasswordToolView()
+            } label: {
+                ToolRow(title: "Password", description: "Protect a tag with a password, or remove one.", systemImage: "key")
+            }
+            NavigationLink {
+                CounterToolView()
+            } label: {
+                ToolRow(title: "Counter", description: "Read the tag counter or switch it on and off.", systemImage: "number")
+            }
+            NavigationLink {
+                MirrorToolView()
+            } label: {
+                ToolRow(title: "Mirror", description: "Put the serial number or scan count into a link.", systemImage: "link.badge.plus")
+            }
+            NavigationLink {
+                LockPagesToolView()
+            } label: {
+                ToolRow(title: "Lock pages", description: "See which pages are locked and lock chosen ones.", systemImage: "lock.rectangle.stack")
+            }
+            NavigationLink {
+                SignatureToolView()
+            } label: {
+                ToolRow(title: "Signature", description: "Check that the chip is a genuine NXP chip.", systemImage: "checkmark.seal")
+            }
+            NavigationLink {
+                UltralightCToolView()
+            } label: {
+                ToolRow(title: "Ultralight C key", description: "Test, set or remove the 3DES key.", systemImage: "key.horizontal")
+            }
+        } header: {
+            Text("NTAG and Ultralight")
+        } footer: {
+            Text("These tools talk to NXP NTAG and MIFARE Ultralight chips. Each screen says which models it needs.")
+        }
+    }
+
+    private var desfireSection: some View {
+        Section {
+            NavigationLink {
+                DESFireToolView()
+            } label: {
+                ToolRow(title: "DESFire card", description: "List applications, format, or set up NDEF.", systemImage: "creditcard")
+            }
+        } header: {
+            Text("DESFire")
+        }
+    }
+
+    private var iso15693Section: some View {
+        Section {
+            NavigationLink {
+                Type5ToolView()
+            } label: {
+                ToolRow(title: "Type 5 settings", description: "AFI, DSFID, block locks, SLIX and ST25TV passwords.", systemImage: "slider.horizontal.3")
+            }
+        } header: {
+            Text("ISO 15693")
+        }
+    }
+
+    private var feliCaSection: some View {
+        Section {
+            NavigationLink {
+                FeliCaToolView()
+            } label: {
+                ToolRow(title: "FeliCa", description: "Read and write blocks of a service.", systemImage: "square.grid.3x3")
+            }
+        } header: {
+            Text("FeliCa")
         }
     }
 }

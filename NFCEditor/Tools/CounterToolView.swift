@@ -8,6 +8,7 @@ struct CounterToolView: View {
     @Environment(AppState.self) private var app
     @State private var lastRead: CounterResult?
     @State private var enableCounter = true
+    @State private var counterNeedsPassword = false
     @State private var password = Data()
     @State private var alert: AlertItem?
 
@@ -38,13 +39,14 @@ struct CounterToolView: View {
 
             Section {
                 Toggle("Count every read", isOn: $enableCounter)
+                Toggle("Counter needs the password", isOn: $counterNeedsPassword)
                 DisclosureGroup("Password") {
                     HexTextField("Password", data: $password, byteCount: 4)
                 }
             } header: {
                 Text("NFC counter")
             } footer: {
-                Text("Only NTAG 213, 215 and 216 can switch their counter on or off. Choose the state you want, then hold the tag. Enter the password if the tag's configuration is password protected.")
+                Text("Only NTAG 213, 215 and 216 can switch their counter on or off. With Counter needs the password on, the tag only tells its count to a reader that gave the password first. Choose the state you want, then hold the tag. Enter the password if the tag's configuration is password protected.")
             }
 
             Section {
@@ -58,6 +60,12 @@ struct CounterToolView: View {
         .navigationTitle("Counter")
         .navigationBarTitleDisplayMode(.inline)
         .alertItem($alert)
+    }
+
+    private static func appliedMessage(enabled: Bool, needsPassword: Bool) -> String {
+        guard enabled else { return "The counter is now disabled." }
+        let access = needsPassword ? "Reading it needs the password." : "Any reader can read it."
+        return "The counter is now enabled. \(access)"
     }
 
     private static func label(for reading: CounterReading, in result: CounterResult) -> String {
@@ -102,6 +110,7 @@ struct CounterToolView: View {
             return
         }
         let enabled = enableCounter
+        let needsPassword = counterNeedsPassword
         let currentPassword: Data? = password.count == 4 ? password : nil
         Task { @MainActor in
             do {
@@ -109,10 +118,10 @@ struct CounterToolView: View {
                     alertMessage: "Hold your iPhone near the tag.",
                     successMessage: enabled ? "Counter enabled." : "Counter disabled."
                 ) { session, tag in
-                    try await TagOperations.setCounter(session, tag, enabled: enabled, password: currentPassword)
+                    try await TagOperations.setCounter(session, tag, enabled: enabled, passwordProtected: needsPassword, password: currentPassword)
                 }
                 Haptics.success()
-                alert = AlertItem.success(enabled ? "The counter is now enabled." : "The counter is now disabled.")
+                alert = AlertItem.success(CounterToolView.appliedMessage(enabled: enabled, needsPassword: needsPassword))
             } catch {
                 if NFCEditorError.map(error).isCancellation { return }
                 Haptics.error()

@@ -3,12 +3,14 @@ import SwiftUI
 import UIKit
 import CoreNFC
 
-/// Reads the 32-byte NXP originality signature from NTAG 21x and Ultralight EV1 chips.
+/// Reads the 32-byte NXP originality signature from NTAG 21x, NTAG I2C and Ultralight EV1 chips and checks it
+/// against NXP's public key on the phone.
 @MainActor
 struct SignatureToolView: View {
     @Environment(AppState.self) private var app
     @State private var lastRead: SignatureResult?
     @State private var copied = false
+    @State private var copyCount = 0
     @State private var alert: AlertItem?
 
     var body: some View {
@@ -18,12 +20,20 @@ struct SignatureToolView: View {
                     read()
                 }
             } footer: {
-                Text("NXP signs every NTAG 213, 215, 216 and MIFARE Ultralight EV1 chip with a 32-byte originality signature tied to its serial number. It helps tell a genuine NXP chip from a clone.")
+                Text("NXP signs every NTAG 21x, NTAG I2C and MIFARE Ultralight EV1 chip with a 32-byte originality signature tied to its serial number. The app checks it against NXP's public key to tell a genuine NXP chip from a clone.")
             }
             .listRowBackground(Color.clear)
             .listRowInsets(EdgeInsets())
 
             if let lastRead {
+                Section {
+                    verdictRow(lastRead.verdict)
+                } header: {
+                    Text("Result")
+                } footer: {
+                    Text(TagDetailView.verdictFooter(lastRead.verdict))
+                }
+
                 Section {
                     LabeledContent("Chip", value: lastRead.chipName)
                     LabeledContent("Serial number") {
@@ -45,13 +55,35 @@ struct SignatureToolView: View {
                 } header: {
                     Text("Signature")
                 } footer: {
-                    Text("Read at \(lastRead.readAt.formatted(date: .omitted, time: .shortened)). Verify it against NXP's public key with the NXP TagInfo app. The check needs the serial number as well as the signature.")
+                    Text("Read at \(lastRead.readAt.formatted(date: .omitted, time: .shortened)). The check uses the serial number as well as the signature, and runs on your iPhone without a network connection.")
                 }
             }
         }
         .navigationTitle("Signature")
         .navigationBarTitleDisplayMode(.inline)
         .alertItem($alert)
+    }
+
+    private func verdictRow(_ verdict: SignatureVerdict) -> some View {
+        Label {
+            Text(TagDetailView.verdictText(verdict))
+                .fontWeight(.semibold)
+                .foregroundStyle(TagDetailView.verdictColor(verdict))
+        } icon: {
+            Image(systemName: SignatureToolView.verdictImage(verdict))
+                .foregroundStyle(TagDetailView.verdictColor(verdict))
+        }
+    }
+
+    private static func verdictImage(_ verdict: SignatureVerdict) -> String {
+        switch verdict {
+        case .genuine:
+            return "checkmark.seal.fill"
+        case .notGenuine:
+            return "xmark.seal.fill"
+        case .noKey:
+            return "questionmark.circle"
+        }
     }
 
     private var copyTitle: String {
@@ -73,7 +105,8 @@ struct SignatureToolView: View {
                 ) { session, tag -> SignatureResult in
                     let (spec, uid) = try await TagOperations.identify(session, tag)
                     let signature = try await TagOperations.readSignature(session, tag)
-                    return SignatureResult(chipName: spec.name, uid: uid, signature: signature, readAt: Date())
+                    let verdict = OriginalitySignature.verify(signature: signature, uid: uid, chip: spec)
+                    return SignatureResult(chipName: spec.name, uid: uid, signature: signature, verdict: verdict, readAt: Date())
                 }
                 lastRead = result
                 copied = false
@@ -90,9 +123,14 @@ struct SignatureToolView: View {
         UIPasteboard.general.string = signature.hexString()
         Haptics.tap()
         copied = true
+        copyCount += 1
+        let current = copyCount
         Task { @MainActor in
             try? await Task.sleep(for: .seconds(2))
-            copied = false
+            // A later tap restarts the two seconds, so only the newest tap resets the label.
+            if copyCount == current {
+                copied = false
+            }
         }
     }
 }
@@ -101,5 +139,6 @@ private struct SignatureResult: Hashable, Sendable {
     var chipName: String
     var uid: Data
     var signature: Data
+    var verdict: SignatureVerdict
     var readAt: Date
 }

@@ -27,6 +27,8 @@ const SIM = (() => {
     capacity: (n, c) => new NFCError('capacityExceeded', `The data needs ${n} bytes but the tag holds ${c} bytes.`),
     nak: (code) => new NFCError('nak', code == null ? 'The tag refused the command.' : `The tag refused the command (NAK 0x${code.toString(16).toUpperCase().padStart(2, '0')}).`),
     auth: () => new NFCError('authenticationFailed', 'The password was not accepted.'),
+    destroyed: () => new NFCError('tagLost', 'The tag did not answer. A destroyed ICODE tag never responds again until you reset the simulated tags.'),
+    privacy: () => new NFCError('commandFailed', 'The tag is in privacy mode. Present the privacy password first.'),
     input: (m) => new NFCError('invalidInput', m),
     chip: (m) => new NFCError('notSupportedOnChip', 'This chip does not support that. ' + m),
     command: (m) => new NFCError('commandFailed', m),
@@ -41,20 +43,66 @@ const SIM = (() => {
     ntag215: type2('NTAG215', 'ntag21x', { totalPages: 135, userRange: [4, 129], userMemoryBytes: 504, configPage: 0x83, dynamicLockPage: 0x82, cc: [0xE1, 0x10, 0x3E, 0x00], supportsPassword: true, supportsCounter: true, counterCount: 1, supportsSignature: true, version: '0004040201001103' }),
     ntag216: type2('NTAG216', 'ntag21x', { totalPages: 231, userRange: [4, 225], userMemoryBytes: 888, configPage: 0xE3, dynamicLockPage: 0xE2, cc: [0xE1, 0x10, 0x6D, 0x00], supportsPassword: true, supportsCounter: true, counterCount: 1, supportsSignature: true, version: '0004040201001303' }),
     ul21: type2('MIFARE Ultralight EV1 (MF0UL21)', 'ultralightEV1', { totalPages: 41, userRange: [4, 35], userMemoryBytes: 128, configPage: 0x25, dynamicLockPage: 0x24, cc: [0xE1, 0x10, 0x10, 0x00], supportsPassword: true, supportsCounter: true, counterCount: 3, supportsSignature: true, version: '0004030101000E03' }),
+    ntag213tt: type2('NTAG213 TT', 'ntag21x', { totalPages: 45, userRange: [4, 39], userMemoryBytes: 144, configPage: 0x29, dynamicLockPage: 0x28, cc: [0xE1, 0x10, 0x12, 0x00], supportsPassword: true, supportsCounter: true, counterCount: 1, supportsSignature: true, version: '0004040203000F03', tamper: true }),
+    ultralightC: type2('MIFARE Ultralight C', 'ultralightC', { totalPages: 48, userRange: [4, 39], userMemoryBytes: 144, cc: [0xE1, 0x10, 0x12, 0x00], supportsRawPages: true, ulcAuth0Page: 0x2A, ulcAuth1Page: 0x2B, ulcKeyPages: [0x2C, 0x2D, 0x2E, 0x2F], version: null }),
+    magicNtag216: type2('Magic NTAG216 (writable serial)', 'ntag21x', { totalPages: 231, userRange: [4, 225], userMemoryBytes: 888, configPage: 0xE3, dynamicLockPage: 0xE2, cc: [0xE1, 0x10, 0x6D, 0x00], supportsPassword: true, supportsCounter: true, counterCount: 1, supportsSignature: true, version: '0004040201001303', magicSerial: true }),
     ntag203: type2('NTAG203', 'ntag203', { totalPages: 42, userRange: [4, 39], userMemoryBytes: 144, dynamicLockPage: 0x28, cc: [0xE1, 0x10, 0x12, 0x00], version: null }),
     classic: type2('Unsupported MIFARE tag', 'mifareClassic', { manufacturer: 'Unknown', totalPages: null, userRange: null, userMemoryBytes: null, supportsRawPages: false, atqa: 0x0004, sak: 0x08, notes: 'iOS cannot read this tag. MIFARE Classic is not supported.', version: null }),
     desfire: { name: 'MIFARE DESFire EV1 4K', manufacturer: 'NXP', family: 'desfire', nfcForumType: 4, isoStandard: 'ISO 14443-4A', pageSize: 1, totalPages: null, userRange: null, userMemoryBytes: 4096, supportsPassword: false, supportsCounter: false, counterCount: 0, supportsSignature: false, supportsRawPages: false, atqa: 0x0344, sak: 0x20, notes: null, cc: null, configPage: null, dynamicLockPage: null },
+    desfireEV2: { name: 'MIFARE DESFire EV2 2K', manufacturer: 'NXP', family: 'desfire', nfcForumType: 4, isoStandard: 'ISO 14443-4A', pageSize: 1, totalPages: null, userRange: null, userMemoryBytes: 2048, supportsPassword: false, supportsCounter: false, counterCount: 0, supportsSignature: false, supportsRawPages: false, atqa: 0x0344, sak: 0x20, notes: null, cc: null, configPage: null, dynamicLockPage: null },
     slix: { name: 'ICODE SLIX', manufacturer: 'NXP', family: 'icodeSLIX', nfcForumType: 5, isoStandard: 'ISO 15693', pageSize: 4, totalPages: 28, userRange: [0, 27], userMemoryBytes: 112, supportsPassword: false, supportsCounter: false, counterCount: 0, supportsSignature: false, supportsRawPages: true, atqa: null, sak: null, notes: null, cc: null, configPage: null, dynamicLockPage: null },
+    st25tv: { name: 'ST25TV02K', manufacturer: 'STMicroelectronics', family: 'st25tv', nfcForumType: 5, isoStandard: 'ISO 15693', pageSize: 4, totalPages: 64, userRange: [0, 63], userMemoryBytes: 256, supportsPassword: false, supportsCounter: false, counterCount: 0, supportsSignature: false, supportsRawPages: true, atqa: null, sak: null, notes: null, cc: null, configPage: null, dynamicLockPage: null },
     felica: { name: 'FeliCa (NDEF)', manufacturer: 'Sony', family: 'feliCa', nfcForumType: 3, isoStandard: 'ISO 18092 (JIS X 6319-4)', pageSize: 16, totalPages: null, userRange: null, userMemoryBytes: null, supportsPassword: false, supportsCounter: false, counterCount: 0, supportsSignature: false, supportsRawPages: false, atqa: null, sak: null, notes: null, cc: null, configPage: null, dynamicLockPage: null },
   };
   const chipPages = (c) => ({ cfg0: c.configPage, cfg1: c.configPage == null ? null : c.configPage + 1, pwd: c.configPage == null ? null : c.configPage + 2, pack: c.configPage == null ? null : c.configPage + 3 });
   const isNTAG21x = (c) => c.family === 'ntag21x';
+  const isUlC = (c) => c.family === 'ultralightC';
+  const hex6 = (n) => (n & 0xFFFFFF).toString(16).toUpperCase().padStart(6, '0');
+  // Dynamic lock bits: how many user pages one lock bit covers, where they start and how many bits there are.
+  function dynamicLayout(spec) {
+    if (spec.dynamicLockPage == null || !spec.userRange) return null;
+    const lastUser = spec.userRange[1];
+    const pagesPerBit = spec.totalPages >= 128 ? 16 : 2;
+    const bitCount = Math.ceil((lastUser - 15) / pagesPerBit);
+    return { pagesPerBit, firstPage: 16, bitCount };
+  }
+  // Lock state as the groups the Lock pages tool shows: static pages 3..15 one per group, then the dynamic groups.
+  function lockGroups(tag) {
+    const spec = tag.spec, out = [];
+    if (!spec.userRange) return out;
+    const b2 = tag.pages[2][2], b3 = tag.pages[2][3];
+    const staticLocked = (p) => (p === 3 ? (b2 & 0x08) : p <= 7 ? (b2 & (1 << p)) : (b3 & (1 << (p - 8))));
+    for (let p = 3; p <= 15 && p <= spec.userRange[1]; p++) out.push({ from: p, to: p, locked: !!staticLocked(p), lockable: true });
+    const layout = dynamicLayout(spec);
+    if (layout) {
+      const d = tag.pages[spec.dynamicLockPage];
+      for (let g = 0; g < layout.bitCount; g++) {
+        const from = layout.firstPage + g * layout.pagesPerBit;
+        const to = Math.min(from + layout.pagesPerBit - 1, spec.userRange[1]);
+        out.push({ from, to, locked: !!(d[Math.floor(g / 8)] & (1 << (g % 8))), lockable: true });
+      }
+    }
+    return out;
+  }
+
+  // NTAG mirror placeholders and CFG0 MIRROR_CONF codes. "both" is the UID, an "x", then the counter.
+  const MIRROR_PLACEHOLDER = { none: '', uid: '0'.repeat(14), counter: '0'.repeat(6), both: '0'.repeat(14) + 'x' + '0'.repeat(6) };
+  const MIRROR_CONF = { none: 0, uid: 1, counter: 2, both: 3 };
+  // Put the placeholder where "{mirror}" is, or append it, and say where in the URL string it starts.
+  function mirroredURL(url, kind) {
+    const ph = MIRROR_PLACEHOLDER[kind] || '';
+    const at = url.indexOf('{mirror}');
+    if (at >= 0) return { fullURL: url.slice(0, at) + ph + url.slice(at + 8), placeholderIndex: at };
+    return { fullURL: url + ph, placeholderIndex: url.length };
+  }
 
   // Type 2 emulator
   class Type2Tag {
     constructor(id, name, chipKey, uidHex, setup) {
       this.id = id; this.name = name; this.kind = 'type2'; this.chipKey = chipKey; this.spec = CHIPS[chipKey];
       this.uid = FH(uidHex);
+      this.genuine = true; // the originality signature matches NXP's key; a clone sets this false
+      this.tamperOpen = false; // NTAG213TT tamper loop, closed from the factory
       this.factory();
       if (setup) setup(this);
       this.authenticated = false;
@@ -74,6 +122,11 @@ const SIM = (() => {
         this.pages[p.pwd] = U8(0xFF, 0xFF, 0xFF, 0xFF);
         this.pages[p.pack] = U8(0x00, 0x00, 0x00, 0x00);
       }
+      if (isUlC(c)) {
+        this.ulcKey = NDEF.utf8('BREAKMEIFYOUCAN!'); // 16 byte 3DES key, kept off the page map like the real chip
+        this.pages[c.ulcAuth0Page] = U8(0x30, 0x00, 0x00, 0x00); // AUTH0 = 0x30 means no page is protected
+        this.pages[c.ulcAuth1Page] = U8(0x00, 0x00, 0x00, 0x00); // AUTH1 bit 0: 0 protects reads and writes, 1 writes only
+      }
       this.password = U8(0xFF, 0xFF, 0xFF, 0xFF);
       this.pack = U8(0x00, 0x00);
       this.counter = 0;
@@ -82,21 +135,49 @@ const SIM = (() => {
       this.version = c.version ? FH(c.version) : null;
     }
     get cfg() { return chipPages(this.spec); }
-    get auth0() { return this.cfg.cfg0 == null ? 0xFF : this.pages[this.cfg.cfg0][3]; }
+    get isUlC() { return isUlC(this.spec); }
+    get auth0() {
+      if (this.isUlC) return this.pages[this.spec.ulcAuth0Page][0];
+      return this.cfg.cfg0 == null ? 0xFF : this.pages[this.cfg.cfg0][3];
+    }
+    get ulcWriteOnly() { return this.isUlC && (this.pages[this.spec.ulcAuth1Page][0] & 0x01) === 0x01; }
     get access() { return this.cfg.cfg1 == null ? 0 : this.pages[this.cfg.cfg1][0]; }
-    get prot() { return (this.access & 0x80) !== 0; }
+    get prot() { return this.isUlC ? true : (this.access & 0x80) !== 0; }
+    get cfgLocked() { return (this.access & 0x40) !== 0; }
+    get counterPwdProt() { return (this.access & 0x08) !== 0; }
     get counterEnabled() { return isNTAG21x(this.spec) ? (this.access & 0x10) !== 0 : this.spec.supportsCounter; }
     get authLimit() { return this.access & 0x07; }
     get staticLocked() { return this.pages[2][2] === 0xFF && this.pages[2][3] === 0xFF; }
     get readOnly() { return (this.pages[3][3] & 0x0F) === 0x0F || this.staticLocked; }
     lockedPage(page) {
-      if (page < 3) return false;
-      if (this.staticLocked && page <= 15) return true;
-      if (this.spec.dynamicLockPage != null && page >= 16 && page <= this.spec.userRange[1]) { const d = this.pages[this.spec.dynamicLockPage]; return d[0] === 0xFF && d[1] === 0xFF; }
+      if (page < 3 || !this.spec.userRange) return false;
+      if (page <= 15) {
+        const b2 = this.pages[2][2], b3 = this.pages[2][3];
+        if (page === 3) return !!(b2 & 0x08);
+        if (page <= 7) return !!(b2 & (1 << page));
+        return !!(b3 & (1 << (page - 8)));
+      }
+      const layout = dynamicLayout(this.spec);
+      if (layout && page <= this.spec.userRange[1]) { const g = Math.floor((page - layout.firstPage) / layout.pagesPerBit); const d = this.pages[this.spec.dynamicLockPage]; return !!(d[Math.floor(g / 8)] & (1 << (g % 8))); }
       return false;
     }
-    protectedRead(page) { return page >= this.auth0 && this.prot && !this.authenticated; }
+    // ICODE-style privacy and NXP mirror both live in the config, so protection for Ultralight C uses AUTH0/AUTH1 directly.
+    protectedRead(page) {
+      if (this.isUlC) return page >= this.auth0 && !this.ulcWriteOnly && !this.authenticated;
+      return page >= this.auth0 && this.prot && !this.authenticated;
+    }
     protectedWrite(page) { return page >= this.auth0 && !this.authenticated; }
+    // NTAG21x UID and counter mirror. When on, reads of the user pages show the serial number and scan count as ASCII.
+    mirror() {
+      if (!isNTAG21x(this.spec) || this.cfg.cfg0 == null) return null;
+      const cfg0 = this.pages[this.cfg.cfg0];
+      const conf = (cfg0[0] >> 6) & 3;
+      if (conf === 0) return null;
+      const kind = ['none', 'uid', 'counter', 'both'][conf];
+      const byte = (cfg0[0] >> 4) & 3, page = cfg0[2];
+      const ascii = kind === 'uid' ? H(this.uid) : kind === 'counter' ? hex6(this.counter) : H(this.uid) + 'x' + hex6(this.counter);
+      return { kind, page, byte, ascii };
+    }
     sessionStart() {
       this.authenticated = false;
       if (this.counterEnabled && this.spec.supportsCounter) this.counter = (this.counter + 1) & 0xFFFFFF;
@@ -105,6 +186,14 @@ const SIM = (() => {
       if (p >= this.spec.totalPages || p < 0) throw E.nak(0x00);
       if (this.protectedRead(p)) throw E.nak(0x04);
       if (p === this.cfg.pwd || p === this.cfg.pack) return U8(0, 0, 0, 0);
+      if (this.isUlC && this.spec.ulcKeyPages.indexOf(p) >= 0) return U8(0, 0, 0, 0); // the 3DES key never reads back
+      const m = this.mirror();
+      if (m && m.ascii.length) {
+        const start = m.page * 4 + m.byte;
+        const out = new Uint8Array(this.pages[p]);
+        for (let i = 0; i < 4; i++) { const abs = p * 4 + i; if (abs >= start && abs < start + m.ascii.length) out[i] = m.ascii.charCodeAt(abs - start); }
+        return out;
+      }
       return this.pages[p];
     }
     command(bytes) {
@@ -121,8 +210,9 @@ const SIM = (() => {
       }
       if (cmd === 0xA2) {
         const p = bytes[1]; const data = bytes.slice(2, 6); if (data.length !== 4 || p >= t) throw E.nak(0x00);
-        if (p <= 1) throw E.nak(0x00);
-        if (this.lockedPage(p) || (this.readOnly && p >= 4 && p <= this.spec.userRange[1])) throw E.nak(0x00);
+        if (p <= 1 && !this.spec.magicSerial) throw E.nak(0x00); // real chips refuse the serial number pages; magic clones accept them
+        if (this.lockedPage(p)) throw E.nak(0x00); // the NDEF read only flag blocks NDEF writes only, so raw page writes still work
+        if (this.cfgLocked && (p === this.cfg.cfg0 || p === this.cfg.cfg1)) throw E.nak(0x00); // CFGLCK freezes CFG0 and CFG1; PWD and PACK stay writable
         if (this.protectedWrite(p)) throw E.nak(0x04);
         if (p === 2) { this.pages[2] = U8(this.pages[2][0], this.pages[2][1], this.pages[2][2] | data[2], this.pages[2][3] | data[3]); return U8(0x0A); }
         if (p === 3) { this.pages[3] = U8(...[0, 1, 2, 3].map((i) => this.pages[3][i] | data[i])); return U8(0x0A); }
@@ -144,13 +234,21 @@ const SIM = (() => {
         const a = bytes[1];
         if (!this.spec.supportsCounter) throw E.nak(0x00);
         if (isNTAG21x(this.spec) && (a !== 2 || !this.counterEnabled)) throw E.nak(0x00);
+        if (isNTAG21x(this.spec) && this.counterPwdProt && !this.authenticated) throw E.nak(0x04); // NFC_CNT_PWD_PROT
         if (!isNTAG21x(this.spec) && a > 2) throw E.nak(0x00);
         const v = isNTAG21x(this.spec) ? this.counter : this.counter + a;
         return U8(v & 255, (v >> 8) & 255, (v >> 16) & 255);
       }
       throw E.nak(0x00);
     }
-    userBytes() { const [a, b] = this.spec.userRange; return NDEF.concat(...this.pages.slice(a, b + 1)); }
+    // NDEF reads see the mirror too: the chip overlays the UID or counter ASCII on every read of those bytes.
+    userBytes() {
+      const [a, b] = this.spec.userRange;
+      const bytes = new Uint8Array(NDEF.concat(...this.pages.slice(a, b + 1)));
+      const m = this.mirror();
+      if (m) { const start = m.page * 4 + m.byte - a * 4; for (let i = 0; i < m.ascii.length; i++) if (start + i >= 0 && start + i < bytes.length) bytes[start + i] = m.ascii.charCodeAt(i); }
+      return bytes;
+    }
     ndefStatus() {
       if (this.pages[3][0] !== 0xE1) return 'notSupported';
       if (this.protectedRead(this.spec.userRange[0])) return 'notSupported';
@@ -182,16 +280,22 @@ const SIM = (() => {
       this.pages[2] = U8(this.pages[2][0], this.pages[2][1], 0xFF, 0xFF);
       if (this.spec.dynamicLockPage != null) this.pages[this.spec.dynamicLockPage] = U8(0xFF, 0xFF, 0xFF, this.pages[this.spec.dynamicLockPage][3]);
     }
-    serialize() { return { pages: this.pages.map((p) => H(p)), password: H(this.password), pack: H(this.pack), counter: this.counter, failedAuth: this.failedAuth }; }
-    restore(s) { if (!s || !s.pages || s.pages.length !== this.pages.length) return; this.pages = s.pages.map(FH); this.password = FH(s.password); this.pack = FH(s.pack); this.counter = s.counter || 0; this.failedAuth = s.failedAuth || 0; }
+    serialize() { return { pages: this.pages.map((p) => H(p)), password: H(this.password), pack: H(this.pack), counter: this.counter, failedAuth: this.failedAuth, ulcKey: this.ulcKey ? H(this.ulcKey) : null, tamperOpen: this.tamperOpen }; }
+    restore(s) { if (!s || !s.pages || s.pages.length !== this.pages.length) return; this.pages = s.pages.map(FH); this.password = FH(s.password); this.pack = FH(s.pack); this.counter = s.counter || 0; this.failedAuth = s.failedAuth || 0; if (s.ulcKey && this.ulcKey) this.ulcKey = FH(s.ulcKey); this.tamperOpen = !!s.tamperOpen; }
   }
 
   // Type 4 (DESFire): NDEF application with a CC file and an NDEF file, read through ISO APDUs.
   class Type4Tag {
-    constructor(id, name, uidHex, records) {
-      this.id = id; this.name = name; this.kind = 'type4'; this.chipKey = 'desfire'; this.spec = CHIPS.desfire; this.uid = FH(uidHex);
-      this.records = records; this.readOnly = false; this.capacity = 2048; this.selected = null; this.frame = 0;
-      this.versionFrames = [FH('04010100011805'), FH('04010101011805'), FH('04D2A1B2C3D4E5F0A1B2C3D4E5F01022')];
+    constructor(id, name, uidHex, records, opts = {}) {
+      this.id = id; this.name = name; this.kind = 'type4'; this.chipKey = opts.chipKey || 'desfire'; this.spec = CHIPS[this.chipKey]; this.uid = FH(uidHex);
+      this.hasNDEF = records != null;
+      this.records = records || []; this.readOnly = false; this.capacity = opts.capacity || 2048; this.selected = null; this.frame = 0;
+      this.totalMemory = this.spec.userMemoryBytes;
+      this.applications = this.hasNDEF ? ['000001'] : [];
+      this.masterKey = U8(0, 0, 0, 0, 0, 0, 0, 0); // legacy D40 master key, all zeros from the factory
+      this.keySettings = 0x0F; this.maxKeys = 1;
+      this.freeMemory = this.hasNDEF ? Math.max(0, this.totalMemory - this.capacity - 256) : this.totalMemory;
+      this.versionFrames = opts.versionFrames || [FH('04010100011805'), FH('04010101011805'), FH('04D2A1B2C3D4E5F0A1B2C3D4E5F01022')];
       this.historicalBytes = FH('80');
     }
     sessionStart() { this.selected = null; this.frame = 0; }
@@ -201,47 +305,83 @@ const SIM = (() => {
       const ok = (data) => ({ data, sw1: 0x90, sw2: 0x00 });
       if (b[0] === 0x90 && b[1] === 0x60) { this.frame = 1; return { data: this.versionFrames[0], sw1: 0x91, sw2: 0xAF }; }
       if (b[0] === 0x90 && b[1] === 0xAF) { if (this.frame === 1) { this.frame = 2; return { data: this.versionFrames[1], sw1: 0x91, sw2: 0xAF }; } if (this.frame === 2) { this.frame = 0; return { data: this.versionFrames[2], sw1: 0x91, sw2: 0x00 }; } return { data: U8(), sw1: 0x91, sw2: 0x1C }; }
-      if (b[0] === 0x00 && b[1] === 0xA4 && b[2] === 0x04) { const aid = H(b.slice(5, 5 + b[4])); if (aid === 'D2760000850101') { this.selected = 'app'; return ok(U8()); } return { data: U8(), sw1: 0x6A, sw2: 0x82 }; }
+      if (b[0] === 0x00 && b[1] === 0xA4 && b[2] === 0x04) { const aid = H(b.slice(5, 5 + b[4])); if (aid === 'D2760000850101' && this.hasNDEF) { this.selected = 'app'; return ok(U8()); } return { data: U8(), sw1: 0x6A, sw2: 0x82 }; }
       if (b[0] === 0x00 && b[1] === 0xA4 && b[2] === 0x00) { const fid = H(b.slice(5, 7)); if (this.selected && fid === 'E103') { this.selected = 'cc'; return ok(U8()); } if (this.selected && fid === 'E104') { this.selected = 'ndef'; return ok(U8()); } return { data: U8(), sw1: 0x6A, sw2: 0x82 }; }
       if (b[0] === 0x00 && b[1] === 0xB0) { const off = (b[2] << 8) | b[3]; const le = b[4] === 0 ? 256 : (b[4] == null ? 256 : b[4]); const file = this.selected === 'cc' ? this.ccFile() : this.selected === 'ndef' ? this.ndefFile() : null; if (!file) return { data: U8(), sw1: 0x69, sw2: 0x86 }; return ok(file.slice(off, off + le)); }
       if (b[0] === 0x90) return { data: U8(), sw1: 0x91, sw2: 0x1C };
       return { data: U8(), sw1: 0x6D, sw2: 0x00 };
     }
-    ndefStatus() { return this.readOnly ? 'readOnly' : 'readWrite'; }
+    ndefStatus() { if (!this.hasNDEF) return 'notSupported'; return this.readOnly ? 'readOnly' : 'readWrite'; }
     ndefCapacity() { return this.capacity; }
-    readNDEF() { return this.records; }
-    writeNDEF(records) { if (this.readOnly) throw E.readOnly(); const n = NDEF.byteCount(records); if (n > this.capacity) throw E.capacity(n, this.capacity); this.records = records; }
-    writeLock() { this.readOnly = true; }
-    serialize() { return { records: this.records.map(serializeRecord), readOnly: this.readOnly }; }
-    restore(s) { if (!s) return; this.records = (s.records || []).map(restoreRecord); this.readOnly = !!s.readOnly; }
+    readNDEF() { if (!this.hasNDEF) throw E.notNDEFFormatted(); return this.records; }
+    writeNDEF(records) { if (!this.hasNDEF) throw E.notNDEFFormatted(); if (this.readOnly) throw E.readOnly(); const n = NDEF.byteCount(records); if (n > this.capacity) throw E.capacity(n, this.capacity); this.records = records; }
+    writeLock() { if (!this.hasNDEF) throw E.notNDEFFormatted(); this.readOnly = true; }
+    serialize() { return { records: this.records.map(serializeRecord), readOnly: this.readOnly, hasNDEF: this.hasNDEF, applications: this.applications.slice(), masterKey: H(this.masterKey), keySettings: this.keySettings, maxKeys: this.maxKeys, capacity: this.capacity, freeMemory: this.freeMemory }; }
+    restore(s) {
+      if (!s) return;
+      this.records = (s.records || []).map(restoreRecord); this.readOnly = !!s.readOnly;
+      if (typeof s.hasNDEF === 'boolean') this.hasNDEF = s.hasNDEF;
+      if (s.applications) this.applications = s.applications.slice();
+      if (s.masterKey) this.masterKey = FH(s.masterKey);
+      if (s.keySettings != null) this.keySettings = s.keySettings;
+      if (s.maxKeys != null) this.maxKeys = s.maxKeys;
+      if (s.capacity != null) this.capacity = s.capacity;
+      if (s.freeMemory != null) this.freeMemory = s.freeMemory;
+    }
+  }
+  // A legacy DESFire master key is accepted when it is all zeros (8 or 16 bytes) and the card still has its factory key.
+  function desfireKeyOk(provided, tag) {
+    if (!provided || (provided.length !== 8 && provided.length !== 16)) return false;
+    const allZero = Array.from(provided).every((b) => b === 0);
+    return allZero && Array.from(tag.masterKey).every((b) => b === 0);
   }
 
-  // Type 5 (ICODE SLIX): 28 blocks of 4 bytes, capability container in block 0.
+  // Type 5 (ISO 15693): blocks of 4 bytes, capability container in block 0. Models both ICODE SLIX and ST25TV.
   class Type5Tag {
-    constructor(id, name, uidHex, records) {
-      this.id = id; this.name = name; this.kind = 'type5'; this.chipKey = 'slix'; this.spec = CHIPS.slix; this.uid = FH(uidHex);
-      this.blocks = Array.from({ length: 28 }, () => U8(0, 0, 0, 0)); this.locked = new Array(28).fill(false);
-      this.blocks[0] = U8(0xE1, 0x40, 0x0E, 0x00);
+    constructor(id, name, uidHex, records, opts = {}) {
+      this.id = id; this.name = name; this.kind = 'type5'; this.chipKey = opts.chipKey || 'slix'; this.spec = CHIPS[this.chipKey]; this.uid = FH(uidHex);
+      this.totalBlocks = opts.totalBlocks || this.spec.totalPages;
+      this.ndefBlocks = Math.min(this.totalBlocks, 28); // the first 28 blocks carry NDEF; the rest is plain memory
+      this.blocks = Array.from({ length: this.totalBlocks }, () => U8(0, 0, 0, 0)); this.locked = new Array(this.totalBlocks).fill(false);
+      this.dsfid = 0x00; this.afi = 0x00; this.lockedDSFID = false; this.lockedAFI = false;
+      this.isSLIX = !!opts.isSLIX; this.isST = !!opts.isST;
+      // SLIX password set, all zeros from the factory: read, write, privacy, destroy and the shared EAS/AFI password.
+      this.passwords = { read: U8(0, 0, 0, 0), write: U8(0, 0, 0, 0), privacy: U8(0, 0, 0, 0), destroy: U8(0, 0, 0, 0), easAFI: U8(0, 0, 0, 0) };
+      this.stPasswords = [U8(0, 0, 0, 0, 0, 0, 0, 0), U8(0, 0, 0, 0, 0, 0, 0, 0), U8(0, 0, 0, 0, 0, 0, 0, 0)]; // ST config, read, write
+      this.privacyOn = false; this.easOn = false; this.destroyed = false;
+      this.presented = {}; this.privacyUnlocked = false; // reset each session
+      const cap = Math.min(this.ndefBlocks * 4 / 8, 0x7F);
+      this.blocks[0] = U8(0xE1, 0x40, cap, 0x00);
       this.writeNDEF(records);
     }
-    sessionStart() {}
-    systemInfo() { return { blockSize: 4, totalBlocks: 28, icReference: 0x01, dsfid: 0x00, afi: 0x00, uid: this.uid }; }
-    readBlock(i) { if (i < 0 || i >= 28) throw E.command('The tag has no block ' + i + '.'); return this.blocks[i]; }
-    writeBlock(i, bytes) { if (i < 0 || i >= 28) throw E.command('The tag has no block ' + i + '.'); if (this.locked[i]) throw E.command('Block ' + i + ' is locked.'); if (bytes.length !== 4) throw E.input('Enter exactly 4 bytes.'); this.blocks[i] = new Uint8Array(bytes); }
+    sessionStart() { this.presented = {}; this.privacyUnlocked = false; }
+    get loc101() { return this.privacyOn && !this.privacyUnlocked; } // in privacy mode the tag answers only its UID
+    systemInfo() { return { blockSize: 4, totalBlocks: this.totalBlocks, icReference: 0x01, dsfid: this.dsfid, afi: this.afi, uid: this.uid }; }
+    readBlock(i) { if (this.destroyed) throw E.destroyed(); if (this.loc101) throw E.privacy(); if (i < 0 || i >= this.totalBlocks) throw E.command('The tag has no block ' + i + '.'); return this.blocks[i]; }
+    writeBlock(i, bytes) { if (this.destroyed) throw E.destroyed(); if (this.loc101) throw E.privacy(); if (i < 0 || i >= this.totalBlocks) throw E.command('The tag has no block ' + i + '.'); if (this.locked[i]) throw E.command('Block ' + i + ' is locked.'); if (bytes.length !== 4) throw E.input('Enter exactly 4 bytes.'); this.blocks[i] = new Uint8Array(bytes); }
     lockBlock(i) { this.locked[i] = true; }
-    custom(flags, code, params) { if (code === 0x2B) return NDEF.concat(U8(0x00, 0x0F), this.uid.slice().reverse(), U8(0x00, 0x00, 27, 0x03, 0x01)); if (code === 0x20 && params.length) return this.readBlock(params[0]); throw E.command('The tag did not answer command 0x' + code.toString(16).toUpperCase() + '.'); }
-    userBytes() { return NDEF.concat(...this.blocks.slice(1)); }
-    ndefStatus() { if (this.blocks[0][0] !== 0xE1 && this.blocks[0][0] !== 0xE2) return 'notSupported'; return (this.blocks[0][1] & 0x0F) === 0x0F || this.locked.slice(1).every(Boolean) ? 'readOnly' : 'readWrite'; }
-    ndefCapacity() { return Math.min(this.blocks[0][2] * 8, 108) - 4; }
+    custom(flags, code, params) { if (code === 0x2B) return NDEF.concat(U8(0x00, 0x0F), this.uid.slice().reverse(), U8(this.afi, this.dsfid, this.totalBlocks - 1, 0x03, 0x01)); if (code === 0x20 && params.length) return this.readBlock(params[0]); throw E.command('The tag did not answer command 0x' + code.toString(16).toUpperCase() + '.'); }
+    userBytes() { return NDEF.concat(...this.blocks.slice(1, this.ndefBlocks)); }
+    ndefCap() { return (this.ndefBlocks - 1) * 4; } // bytes available for the TLV after the capability container
+    ndefStatus() { if (this.destroyed || this.loc101) return 'notSupported'; if (this.blocks[0][0] !== 0xE1 && this.blocks[0][0] !== 0xE2) return 'notSupported'; return (this.blocks[0][1] & 0x0F) === 0x0F || this.locked.slice(1, this.ndefBlocks).every(Boolean) ? 'readOnly' : 'readWrite'; }
+    ndefCapacity() { return Math.min(this.blocks[0][2] * 8, this.ndefCap()) - 4; }
     readNDEF() { if (this.ndefStatus() === 'notSupported') throw E.notNDEFFormatted(); const m = NDEF.messageFromTLV(this.userBytes()); return m && m.length ? NDEF.decode(m) : []; }
     writeNDEF(records) {
       const st = this.ndefStatus(); if (st === 'notSupported') throw E.notNDEFFormatted(); if (st === 'readOnly') throw E.readOnly();
-      const bytes = NDEF.tlv(NDEF.encode(records)); if (bytes.length > 108) throw E.capacity(bytes.length - 3, this.ndefCapacity());
+      const bytes = NDEF.tlv(NDEF.encode(records)); if (bytes.length > this.ndefCap()) throw E.capacity(bytes.length - 3, this.ndefCapacity());
       for (let i = 0; i < bytes.length; i += 4) this.blocks[1 + i / 4] = U8(bytes[i] || 0, bytes[i + 1] || 0, bytes[i + 2] || 0, bytes[i + 3] || 0);
     }
     writeLock() { this.blocks[0] = U8(this.blocks[0][0], (this.blocks[0][1] & 0xF0) | 0x0F, this.blocks[0][2], this.blocks[0][3]); this.locked.fill(true); }
-    serialize() { return { blocks: this.blocks.map((b) => H(b)), locked: this.locked }; }
-    restore(s) { if (!s || !s.blocks) return; this.blocks = s.blocks.map(FH); this.locked = s.locked || this.locked; }
+    serialize() { return { blocks: this.blocks.map((b) => H(b)), locked: this.locked, dsfid: this.dsfid, afi: this.afi, lockedDSFID: this.lockedDSFID, lockedAFI: this.lockedAFI, passwords: Object.fromEntries(Object.entries(this.passwords).map(([k, v]) => [k, H(v)])), stPasswords: this.stPasswords.map((p) => H(p)), privacyOn: this.privacyOn, easOn: this.easOn, destroyed: this.destroyed }; }
+    restore(s) {
+      if (!s || !s.blocks) return;
+      this.blocks = s.blocks.map(FH); this.locked = s.locked || this.locked;
+      if (s.dsfid != null) this.dsfid = s.dsfid; if (s.afi != null) this.afi = s.afi;
+      this.lockedDSFID = !!s.lockedDSFID; this.lockedAFI = !!s.lockedAFI;
+      if (s.passwords) for (const k of Object.keys(this.passwords)) if (s.passwords[k]) this.passwords[k] = FH(s.passwords[k]);
+      if (s.stPasswords) this.stPasswords = s.stPasswords.map(FH);
+      this.privacyOn = !!s.privacyOn; this.easOn = !!s.easOn; this.destroyed = !!s.destroyed;
+    }
   }
 
   // Type 3 (FeliCa)
@@ -249,6 +389,9 @@ const SIM = (() => {
     constructor(id, name, idmHex, records) {
       this.id = id; this.name = name; this.kind = 'type3'; this.chipKey = 'felica'; this.spec = CHIPS.felica; this.uid = FH(idmHex);
       this.pmm = FH('01E0000000FFFF00'); this.systemCode = U8(0x12, 0xFC); this.records = records; this.readOnly = false;
+      // Two services with four 16-byte blocks each: 0x000B read only, 0x0009 read and write.
+      const fill = (label) => Array.from({ length: 4 }, (_, i) => { const b = new Uint8Array(16); NDEF.utf8(`${label} block ${i}`).forEach((c, j) => { if (j < 16) b[j] = c; }); return b; });
+      this.services = { 0x000B: { writable: false, blocks: fill('read only') }, 0x0009: { writable: true, blocks: fill('read write') } };
     }
     sessionStart() {}
     felica(packet) { if (packet[0] === 0x0C) return NDEF.concat(U8(0x0D), this.uid, U8(0x01), this.systemCode); if (packet[0] === 0x00) return NDEF.concat(U8(0x01), this.uid, this.pmm); throw E.command('The tag did not answer command 0x' + packet[0].toString(16).toUpperCase() + '.'); }
@@ -257,8 +400,8 @@ const SIM = (() => {
     readNDEF() { return this.records; }
     writeNDEF(records) { if (this.readOnly) throw E.readOnly(); const n = NDEF.byteCount(records); if (n > 496) throw E.capacity(n, 496); this.records = records; }
     writeLock() { this.readOnly = true; }
-    serialize() { return { records: this.records.map(serializeRecord), readOnly: this.readOnly }; }
-    restore(s) { if (!s) return; this.records = (s.records || []).map(restoreRecord); this.readOnly = !!s.readOnly; }
+    serialize() { return { records: this.records.map(serializeRecord), readOnly: this.readOnly, services: Object.fromEntries(Object.entries(this.services).map(([k, v]) => [k, { writable: v.writable, blocks: v.blocks.map((b) => H(b)) }])) }; }
+    restore(s) { if (!s) return; this.records = (s.records || []).map(restoreRecord); this.readOnly = !!s.readOnly; if (s.services) for (const k of Object.keys(this.services)) if (s.services[k] && s.services[k].blocks) this.services[k].blocks = s.services[k].blocks.map(FH); }
   }
 
   const unsupportedClassic = () => E.unsupportedTag('iOS cannot read MIFARE Classic tags.');
@@ -292,8 +435,14 @@ const SIM = (() => {
       new Type2Tag('ntag216-unformatted', 'NTAG216, not formatted', 'ntag216', '04000011112222', (t) => { t.pages[3] = U8(0, 0, 0, 0); t.pages[4] = U8(0, 0, 0, 0); }),
       new Type2Tag('ul21', 'Ultralight EV1 (MF0UL21)', 'ul21', '04C0FFEE010203', (t) => t.writeNDEF([NDEF.build.text('Ultralight', 'en')])),
       new Type2Tag('ntag203', 'NTAG203 (old, no GET_VERSION)', 'ntag203', '04203203203203', (t) => t.writeNDEF([NDEF.build.uri('https://example.com')])),
+      new Type2Tag('ntag215-clone', 'NTAG215 clone (fake signature)', 'ntag215', '04BADBADBAD001', (t) => { t.writeNDEF([NDEF.build.uri('https://katsuma.ca')]); t.genuine = false; }),
+      new Type2Tag('ntag213tt', 'NTAG213 TT, tamper loop closed', 'ntag213tt', '0413371337AB01', (t) => t.writeNDEF([NDEF.build.text('Tamper evident', 'en')])),
+      new Type2Tag('ultralightc', 'Ultralight C, key BREAKMEIFYOUCAN!', 'ultralightC', '04C1C2C3C4C5C6', (t) => t.writeNDEF([NDEF.build.text('3DES protected', 'en')])),
+      new Type2Tag('magic-ntag216', 'Magic NTAG216 (writable serial)', 'magicNtag216', '04FACADE000001', (t) => t.writeNDEF([NDEF.build.uri('https://katsuma.ca')])),
       new Type4Tag('desfire', 'DESFire EV1 4K', '04D3F1AE000001', [NDEF.build.uri('https://example.com/desfire')]),
-      new Type5Tag('slix', 'ICODE SLIX', 'E004010012345678', [NDEF.build.text('Type 5 tag', 'en')]),
+      new Type4Tag('desfire-blank', 'DESFire EV2, blank', '04D3F1AE0000E2', null, { chipKey: 'desfireEV2' }),
+      new Type5Tag('slix', 'ICODE SLIX', 'E004010012345678', [NDEF.build.text('Type 5 tag', 'en')], { chipKey: 'slix', isSLIX: true }),
+      new Type5Tag('st25tv', 'ST25TV02K', 'E002010087654321', [NDEF.build.text('ST25TV tag', 'en')], { chipKey: 'st25tv', totalBlocks: 64, isST: true }),
       new Type3Tag('felica', 'FeliCa', '01020304050607F8', [NDEF.build.text('FeliCa tag', 'ja')]),
       new ClassicTag('classic', 'MIFARE Classic 1K', 'A1B2C3D4'),
     ];
@@ -335,8 +484,11 @@ const SIM = (() => {
   }
   async function dumpType5(session, tag) {
     const pages = [];
-    for (let i = 0; i < 28; i++) pages.push({ index: i, bytes: tag.readBlock(i), readable: true });
-    session.alertMessage = 'Reading block 28 of 28.'; await session.delay(200);
+    const total = tag.totalBlocks;
+    for (let i = 0; i < total; i++) {
+      try { pages.push({ index: i, bytes: tag.readBlock(i), readable: true }); } catch (e) { pages.push({ index: i, bytes: new Uint8Array(4), readable: false }); }
+      if (i % 32 === 31 || i === total - 1) { session.alertMessage = `Reading block ${i + 1} of ${total}.`; await session.delay(120); }
+    }
     return { pageSize: 4, pages, chip: tag.spec, readAt: new Date().toISOString() };
   }
   function type4Dump(tag) {
@@ -354,7 +506,8 @@ const SIM = (() => {
     async readTag(session, tag, opts = {}) {
       const includeDump = opts.includeDump !== false;
       session.alertMessage = 'Identifying the tag.'; await session.delay(300);
-      const info = { id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()), scannedAt: new Date().toISOString(), technology: technology(tag), chip: tag.spec, uid: H(tag.uid), ndefStatus: 'unknown', ndefCapacity: null, ndefUsedBytes: null, records: [], passwordProtected: null, counter: null, counterEnabled: null, signature: null, versionBytes: null, dump: null, extras: [] };
+      if (tag.kind === 'type5' && tag.destroyed) throw E.destroyed();
+      const info = { id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()), scannedAt: new Date().toISOString(), technology: technology(tag), chip: tag.spec, uid: H(tag.uid), ndefStatus: 'unknown', ndefCapacity: null, ndefUsedBytes: null, records: [], passwordProtected: null, counter: null, counterEnabled: null, signature: null, signatureVerdict: null, tamperStatus: null, versionBytes: null, dump: null, extras: [] };
       session.alertMessage = 'Reading records.'; await session.delay(350);
       const c = ndefContent(tag);
       info.ndefStatus = c.status; info.ndefCapacity = c.capacity; info.records = c.records; info.ndefUsedBytes = c.status === 'notSupported' ? null : (c.records.length ? NDEF.byteCount(c.records) : 0);
@@ -377,15 +530,21 @@ const SIM = (() => {
           if (isNTAG21x(tag.spec)) { try { const v = tag.command(U8(0x39, 0x02)); info.counter = v[0] | (v[1] << 8) | (v[2] << 16); } catch (e) { /* disabled */ } }
           else for (let a = 0; a < 3; a++) { try { const v = tag.command(U8(0x39, a)); const n = v[0] | (v[1] << 8) | (v[2] << 16); if (info.counter == null) info.counter = n; info.extras.push(field('Counter ' + a, String(n), 'number')); } catch (e) { /* ignore */ } }
         }
-        if (tag.spec.supportsSignature) { try { info.signature = H(tag.command(U8(0x3C, 0x00))); } catch (e) { /* ignore */ } }
+        if (tag.spec.supportsSignature) { try { info.signature = H(tag.command(U8(0x3C, 0x00))); info.signatureVerdict = tag.genuine ? 'genuine' : 'notGenuine'; } catch (e) { /* ignore */ } }
+        if (isNTAG21x(tag.spec)) { const m = tag.mirror(); info.extras.push(field('Mirror', m ? `${{ uid: 'UID', counter: 'Counter', both: 'UID and counter' }[m.kind]} at page ${m.page}, byte ${m.byte}` : 'Off', 'link')); }
+        if (tag.spec.tamper) info.tamperStatus = H(ops.tamperBytes(tag), ' ');
         if (tag.version) info.extras.push(field('GET_VERSION', H(tag.version, ' '), 'info'));
       } else if (tag.kind === 'type4') {
         info.versionBytes = H(NDEF.concat(...tag.versionFrames));
         info.extras.push(field('Historical bytes', H(tag.historicalBytes, ' '), 'info'), field('Hardware version', '1.0', 'cpu'), field('Storage size code', '0x18', 'cpu'), field('Software version', '1.3', 'cpu'));
-        if (includeDump) { session.alertMessage = 'Reading the NDEF file.'; await session.delay(300); info.dump = type4Dump(tag); }
+        info.extras.push(field('Applications', tag.applications.length ? tag.applications.join(', ') : 'None', 'app'), field('Free memory', tag.freeMemory + ' bytes', 'memorychip'));
+        if (includeDump && tag.hasNDEF) { session.alertMessage = 'Reading the NDEF file.'; await session.delay(300); info.dump = type4Dump(tag); }
       } else if (tag.kind === 'type5') {
         const s = tag.systemInfo();
-        info.extras.push(field('DSFID', '0x00', 'info'), field('AFI', '0x00', 'info'), field('IC reference', '0x01', 'cpu'), field('Blocks', `${s.totalBlocks} blocks of ${s.blockSize} bytes`, 'grid'), field('IC manufacturer code', '0x04', 'building'));
+        info.extras.push(field('DSFID', '0x' + s.dsfid.toString(16).toUpperCase().padStart(2, '0'), 'info'), field('AFI', '0x' + s.afi.toString(16).toUpperCase().padStart(2, '0'), 'info'), field('IC reference', '0x01', 'cpu'), field('Blocks', `${s.totalBlocks} blocks of ${s.blockSize} bytes`, 'grid'), field('IC manufacturer code', tag.isST ? '0x02' : '0x04', 'building'));
+        const lockedCount = tag.locked.filter(Boolean).length;
+        if (lockedCount) info.extras.push(field('Locked blocks', String(lockedCount), 'lock'));
+        if (tag.isSLIX) info.extras.push(field('Privacy mode', tag.privacyOn ? 'On' : 'Off', 'lock'), field('EAS', tag.easOn ? 'On' : 'Off', 'info'));
         if (includeDump) info.dump = await dumpType5(session, tag);
       } else if (tag.kind === 'type3') {
         info.extras.push(field('PMm', H(tag.pmm, ' '), 'info'), field('System code', '0x12FC', 'number'));
@@ -472,12 +631,13 @@ const SIM = (() => {
       if (tag.kind === 'type5') { session.alertMessage = `Writing block ${index}.`; await session.delay(300); tag.writeBlock(index, bytes); return; }
       throw E.chip('Writing single pages is only available for Type 2 and Type 5 tags.');
     },
-    async writeDump(session, tag, dump, range, password) {
+    async writeDump(session, tag, dump, range, password, includeSerialPages) {
       if (tag.kind !== 'type2' && tag.kind !== 'type5') throw E.chip('Writing a memory dump is only available for Type 2 and Type 5 tags.');
       session.alertMessage = 'Identifying the tag.'; await session.delay(250);
       if (dump.pageSize !== 4) throw E.input('The dump must use 4-byte pages for this tag.');
       const target = range || tag.spec.userRange;
-      const pages = dump.pages.filter((p) => p.readable && p.bytes.length === 4 && p.index >= target[0] && p.index <= target[1]);
+      let pages = dump.pages.filter((p) => p.readable && p.bytes.length === 4 && p.index >= target[0] && p.index <= target[1]);
+      if (!includeSerialPages) pages = pages.filter((p) => p.index > 1); // the serial number pages only go in when asked, and only magic chips accept them
       if (!pages.length) throw E.input('The dump has no pages in the selected range.');
       if (password && tag.kind === 'type2') { session.alertMessage = 'Authenticating.'; await session.delay(200); authenticate(tag, password); }
       let written = 0;
@@ -524,13 +684,15 @@ const SIM = (() => {
       try { const v = tag.command(U8(0x39, address)); return v[0] | (v[1] << 8) | (v[2] << 16); }
       catch (e) { if (e.code === 'nak') throw E.command('The tag refused to show the counter. It may be disabled or password protected.'); throw e; }
     },
-    async setCounter(session, tag, enabled, password) {
+    async setCounter(session, tag, enabled, passwordProtected, password) {
       if (tag.kind !== 'type2' || !isNTAG21x(tag.spec)) throw E.chip('Counters can only be switched on NTAG tags.');
       session.alertMessage = 'Identifying the tag.'; await session.delay(250);
       if (password) { session.alertMessage = 'Authenticating.'; await session.delay(200); authenticate(tag, password); }
       const cfg1 = Array.from(tag.readPage(tag.cfg.cfg1));
       session.alertMessage = enabled ? 'Enabling the counter.' : 'Disabling the counter.'; await session.delay(300);
       cfg1[0] = enabled ? cfg1[0] | 0x10 : cfg1[0] & 0xEF;
+      if (passwordProtected === true) cfg1[0] |= 0x08; // NFC_CNT_PWD_PROT
+      else if (passwordProtected === false) cfg1[0] &= 0xF7; // leaving it null keeps the current setting
       tag.command(U8(0xA2, tag.cfg.cfg1, ...cfg1));
     },
     async readSignature(session, tag) {
@@ -540,6 +702,314 @@ const SIM = (() => {
       session.alertMessage = 'Reading the signature.'; await session.delay(300);
       return H(tag.command(U8(0x3C, 0x00)));
     },
+    // Verify the originality signature against NXP's public key. The simulator carries a genuine flag per tag
+    // instead of running ECDSA, so the verdict is the flag; chips with no signature report no key.
+    async verifySignature(session, tag) {
+      if (tag.kind !== 'type2') throw E.chip('Signatures are only available on NTAG and Ultralight EV1 tags.');
+      session.alertMessage = 'Identifying the tag.'; await session.delay(250);
+      if (!tag.spec.supportsSignature) return 'noKey';
+      session.alertMessage = 'Reading the signature.'; await session.delay(300);
+      tag.command(U8(0x3C, 0x00));
+      session.alertMessage = 'Verifying against NXP’s key.'; await session.delay(400);
+      return tag.genuine ? 'genuine' : 'notGenuine';
+    },
+
+    // NTAG mirror. The URL is written with a placeholder and CFG0 points at it; on every read the chip overlays the UID or counter.
+    mirroredURL,
+    async writeMirroredURL(session, tag, url, kind, password) {
+      if (tag.kind !== 'type2' || !isNTAG21x(tag.spec)) throw E.chip('The UID and counter mirror is only on NTAG21x tags.');
+      if (MIRROR_CONF[kind] == null) throw E.input('Choose what to mirror.');
+      session.alertMessage = 'Identifying the tag.'; await session.delay(250);
+      if (password) { session.alertMessage = 'Authenticating.'; await session.delay(200); authenticate(tag, password); }
+      const m = mirroredURL(url, kind);
+      const rec = NDEF.build.uri(m.fullURL);
+      const message = NDEF.encode([rec]);
+      const prefixLength = NDEF.URI_PREFIXES[NDEF.abbreviate(m.fullURL).code].length;
+      const tlvHeaderLength = message.length < 255 ? 2 : 4;
+      const offset = tlvHeaderLength + 5 + (m.placeholderIndex - prefixLength);
+      const page = 4 + Math.floor(offset / 4), byte = offset % 4;
+      const ph = MIRROR_PLACEHOLDER[kind];
+      if (kind !== 'none') {
+        const lastPage = 4 + Math.floor((offset + ph.length - 1) / 4);
+        if (page < 4 || lastPage > tag.spec.userRange[1] - 1) throw E.input('The mirror does not fit on this tag. Shorten the URL.');
+      }
+      session.alertMessage = `Writing ${message.length + 3} bytes.`; await session.delay(400);
+      tag.writeNDEF([rec]);
+      session.alertMessage = 'Setting the mirror configuration.'; await session.delay(300);
+      const cfg0 = Array.from(tag.readPage(tag.cfg.cfg0));
+      cfg0[0] = (cfg0[0] & 0x0F) | (MIRROR_CONF[kind] << 6) | ((byte & 3) << 4);
+      cfg0[2] = page;
+      tag.command(U8(0xA2, tag.cfg.cfg0, ...cfg0));
+      if (kind === 'counter' || kind === 'both') { const cfg1 = Array.from(tag.readPage(tag.cfg.cfg1)); cfg1[0] |= 0x10; tag.command(U8(0xA2, tag.cfg.cfg1, ...cfg1)); }
+      return m.fullURL;
+    },
+    async readMirror(session, tag) {
+      if (tag.kind !== 'type2' || !isNTAG21x(tag.spec)) throw E.chip('The mirror is only on NTAG21x tags.');
+      session.alertMessage = 'Reading the mirror setting.'; await session.delay(300);
+      const cfg0 = tag.readPage(tag.cfg.cfg0);
+      return { kind: ['none', 'uid', 'counter', 'both'][(cfg0[0] >> 6) & 3], page: cfg0[2], byte: (cfg0[0] >> 4) & 3 };
+    },
+    async disableMirror(session, tag, password) {
+      if (tag.kind !== 'type2' || !isNTAG21x(tag.spec)) throw E.chip('The mirror is only on NTAG21x tags.');
+      session.alertMessage = 'Identifying the tag.'; await session.delay(250);
+      if (password) { session.alertMessage = 'Authenticating.'; await session.delay(200); authenticate(tag, password); }
+      session.alertMessage = 'Turning the mirror off.'; await session.delay(300);
+      const cfg0 = Array.from(tag.readPage(tag.cfg.cfg0));
+      cfg0[0] = cfg0[0] & 0x0F;
+      tag.command(U8(0xA2, tag.cfg.cfg0, ...cfg0));
+    },
+
+    // Lock bits (single pages and page groups), static and dynamic.
+    async lockState(session, tag) {
+      if (tag.kind !== 'type2' || !tag.spec.userRange) throw E.chip('Lock bits are only on NTAG and Ultralight tags.');
+      session.alertMessage = 'Reading the lock state.'; await session.delay(300);
+      return lockGroups(tag);
+    },
+    async lockPages(session, tag, groups, password) {
+      if (tag.kind !== 'type2' || !tag.spec.userRange) throw E.chip('Lock bits are only on NTAG and Ultralight tags.');
+      session.alertMessage = 'Identifying the tag.'; await session.delay(250);
+      if (password) { session.alertMessage = 'Authenticating.'; await session.delay(200); authenticate(tag, password); }
+      const layout = dynamicLayout(tag.spec);
+      let b2 = 0, b3 = 0; const dyn = [0, 0, 0];
+      for (const g of (groups || [])) {
+        if (!g.locked) continue;
+        if (g.from <= 15) { const p = g.from; if (p === 3) b2 |= 0x08; else if (p <= 7) b2 |= (1 << p); else b3 |= (1 << (p - 8)); }
+        else if (layout) { const gi = Math.round((g.from - layout.firstPage) / layout.pagesPerBit); dyn[Math.floor(gi / 8)] |= (1 << (gi % 8)); }
+      }
+      session.alertMessage = 'Locking the chosen pages.'; await session.delay(400);
+      if (b2 || b3) tag.command(U8(0xA2, 2, 0, 0, b2, b3));
+      if ((dyn[0] || dyn[1]) && tag.spec.dynamicLockPage != null) { const d = tag.pages[tag.spec.dynamicLockPage]; tag.command(U8(0xA2, tag.spec.dynamicLockPage, dyn[0], dyn[1], 0, d[3])); }
+      return lockGroups(tag);
+    },
+
+    // NDEF read only flag (CC byte 3 on Type 2, CC nibble on Type 5). Raw page writes still work afterwards.
+    async setNDEFReadOnlyFlag(session, tag) {
+      if (tag.kind === 'type2') {
+        session.alertMessage = 'Identifying the tag.'; await session.delay(250);
+        if (tag.pages[3][0] !== 0xE1) throw E.notNDEFFormatted();
+        if (tag.ndefStatus() === 'readOnly') throw E.readOnly();
+        session.alertMessage = 'Setting the read only flag.'; await session.delay(300);
+        tag.command(U8(0xA2, 3, 0, 0, 0, 0x0F));
+        return;
+      }
+      if (tag.kind === 'type5') {
+        if (tag.ndefStatus() === 'readOnly') throw E.readOnly();
+        session.alertMessage = 'Setting the read only flag.'; await session.delay(300);
+        const b0 = tag.readBlock(0); tag.writeBlock(0, U8(b0[0], (b0[1] & 0xF0) | 0x0F, b0[2], b0[3]));
+        return;
+      }
+      throw E.chip('The NDEF read only flag is only on Type 2 and Type 5 tags.');
+    },
+
+    // Config lock (CFGLCK): afterwards the configuration, password and PACK pages refuse writes.
+    async lockConfiguration(session, tag, password) {
+      if (tag.kind !== 'type2' || tag.cfg.cfg1 == null) throw E.chip('The configuration lock is only on NTAG and Ultralight EV1 tags.');
+      session.alertMessage = 'Identifying the tag.'; await session.delay(250);
+      if (password) { session.alertMessage = 'Authenticating.'; await session.delay(200); authenticate(tag, password); }
+      session.alertMessage = 'Locking the configuration.'; await session.delay(300);
+      const cfg1 = Array.from(tag.readPage(tag.cfg.cfg1));
+      cfg1[0] |= 0x40;
+      tag.command(U8(0xA2, tag.cfg.cfg1, ...cfg1));
+    },
+
+    // NTAG213TT tamper loop.
+    // READ_TT_STATUS answers the 4-byte TT message, then the status byte: C (0x43) closed loop, O (0x4F) open, I (0x49) not determined.
+    tamperBytes(tag) { return U8(0x00, 0x00, 0x00, 0x00, tag.tamperOpen ? 0x4F : 0x43); },
+    async readTamperStatus(session, tag) {
+      if (tag.kind !== 'type2' || !tag.spec.tamper) throw E.chip('A tamper status is only on NTAG213 TT tags.');
+      session.alertMessage = 'Reading the tamper status.'; await session.delay(300);
+      return ops.tamperBytes(tag);
+    },
+    async setTamperStatus(session, tag, opened) {
+      if (tag.kind !== 'type2' || !tag.spec.tamper) throw E.chip('A tamper status is only on NTAG213 TT tags.');
+      session.alertMessage = opened ? 'Opening the tamper loop.' : 'Closing the tamper loop.'; await session.delay(300);
+      tag.tamperOpen = !!opened;
+    },
+
+    // Ultralight C: 3DES authentication is faked by comparing the 16 byte key.
+    async ultralightCAuthenticate(session, tag, key) {
+      if (tag.kind !== 'type2' || !tag.isUlC) throw E.chip('3DES authentication is only on Ultralight C tags.');
+      if (key.length !== 16) throw E.input('The key must be 16 bytes.');
+      session.alertMessage = 'Authenticating.'; await session.delay(400);
+      if (!NDEF.equal(key, tag.ulcKey)) throw E.auth();
+      tag.authenticated = true;
+      return true;
+    },
+    async ultralightCSetKey(session, tag, currentKey, newKey, firstPage, writeOnly) {
+      if (tag.kind !== 'type2' || !tag.isUlC) throw E.chip('3DES authentication is only on Ultralight C tags.');
+      if (newKey.length !== 16) throw E.input('The new key must be 16 bytes.');
+      session.alertMessage = 'Authenticating.'; await session.delay(300);
+      if (!NDEF.equal(currentKey, tag.ulcKey)) throw E.auth();
+      tag.authenticated = true;
+      session.alertMessage = 'Setting the key and protection.'; await session.delay(400);
+      tag.ulcKey = new Uint8Array(newKey);
+      tag.pages[tag.spec.ulcAuth0Page] = U8(firstPage & 0xFF, 0, 0, 0);
+      tag.pages[tag.spec.ulcAuth1Page] = U8(writeOnly ? 1 : 0, 0, 0, 0);
+    },
+    async ultralightCRemoveProtection(session, tag, key) {
+      if (tag.kind !== 'type2' || !tag.isUlC) throw E.chip('3DES authentication is only on Ultralight C tags.');
+      session.alertMessage = 'Authenticating.'; await session.delay(300);
+      if (!NDEF.equal(key, tag.ulcKey)) throw E.auth();
+      tag.authenticated = true;
+      session.alertMessage = 'Removing the protection.'; await session.delay(300);
+      tag.pages[tag.spec.ulcAuth0Page] = U8(0x30, 0, 0, 0);
+    },
+
+    // DESFire overview, format and NDEF application creation.
+    async desfireOverview(session, tag) {
+      if (tag.kind !== 'type4') throw E.chip('DESFire commands need an ISO 14443-4 tag.');
+      session.alertMessage = 'Reading the card.'; await session.delay(300);
+      session.alertMessage = 'Listing applications.'; await session.delay(250);
+      return { version: H(NDEF.concat(...tag.versionFrames)), applications: tag.applications.slice(), freeMemory: tag.freeMemory, keySettings: tag.keySettings, maxKeys: tag.maxKeys, hasNDEFApplication: tag.hasNDEF };
+    },
+    async desfireFormat(session, tag, masterKey) {
+      if (tag.kind !== 'type4') throw E.chip('DESFire commands need an ISO 14443-4 tag.');
+      session.alertMessage = 'Identifying the tag.'; await session.delay(250);
+      session.alertMessage = 'Authenticating with the master key.'; await session.delay(300);
+      if (!desfireKeyOk(masterKey, tag)) throw new NFCError('authenticationFailed', 'The card did not accept the master key.');
+      session.alertMessage = 'Formatting the card.'; await session.delay(500);
+      tag.applications = []; tag.hasNDEF = false; tag.records = []; tag.freeMemory = tag.totalMemory;
+    },
+    async desfireCreateNDEFApplication(session, tag, masterKey, formatFirst, ndefFileSize) {
+      if (tag.kind !== 'type4') throw E.chip('DESFire commands need an ISO 14443-4 tag.');
+      if (!(ndefFileSize > 0)) throw E.input('Choose an NDEF file size.');
+      session.alertMessage = 'Selecting the master application.'; await session.delay(250);
+      session.alertMessage = 'Authenticating with the master key.'; await session.delay(300);
+      if (!desfireKeyOk(masterKey, tag)) throw new NFCError('authenticationFailed', 'The card did not accept the master key.');
+      if (formatFirst) { session.alertMessage = 'Formatting the card.'; await session.delay(400); tag.applications = []; tag.hasNDEF = false; tag.records = []; tag.freeMemory = tag.totalMemory; }
+      if (tag.hasNDEF) throw E.command('The card already has an NDEF application.');
+      session.alertMessage = 'Creating application 000001.'; await session.delay(300);
+      session.alertMessage = 'Creating the CC and NDEF files.'; await session.delay(300);
+      tag.applications = Array.from(new Set(['000001', ...tag.applications]));
+      tag.hasNDEF = true; tag.capacity = ndefFileSize; tag.records = [];
+      tag.freeMemory = Math.max(0, tag.totalMemory - ndefFileSize - 256);
+    },
+
+    // Type 5 settings: AFI, DSFID, block locks, and the ICODE SLIX and ST25TV password commands.
+    async type5Settings(session, tag) {
+      if (tag.kind !== 'type5') throw E.chip('Type 5 settings are only on ISO 15693 tags.');
+      if (tag.destroyed) throw E.destroyed();
+      if (tag.loc101) throw E.privacy();
+      session.alertMessage = 'Reading settings.'; await session.delay(300);
+      return { dsfid: tag.dsfid, afi: tag.afi, blockSize: 4, totalBlocks: tag.totalBlocks, lockedBlocks: tag.locked.slice(), isSLIX: tag.isSLIX, isST: tag.isST };
+    },
+    async type5WriteAFI(session, tag, afi, lock) {
+      if (tag.kind !== 'type5') throw E.chip('The AFI is only on ISO 15693 tags.');
+      if (tag.destroyed) throw E.destroyed();
+      if (tag.lockedAFI) throw E.command('The AFI is locked and cannot be changed.');
+      session.alertMessage = 'Writing the AFI.'; await session.delay(300);
+      tag.afi = afi & 0xFF; if (lock) tag.lockedAFI = true;
+    },
+    async type5WriteDSFID(session, tag, dsfid, lock) {
+      if (tag.kind !== 'type5') throw E.chip('The DSFID is only on ISO 15693 tags.');
+      if (tag.destroyed) throw E.destroyed();
+      if (tag.lockedDSFID) throw E.command('The DSFID is locked and cannot be changed.');
+      session.alertMessage = 'Writing the DSFID.'; await session.delay(300);
+      tag.dsfid = dsfid & 0xFF; if (lock) tag.lockedDSFID = true;
+    },
+    async type5LockBlocks(session, tag, blocks) {
+      if (tag.kind !== 'type5') throw E.chip('Block locks are only on ISO 15693 tags.');
+      if (tag.destroyed) throw E.destroyed();
+      session.alertMessage = 'Locking blocks.'; await session.delay(300);
+      for (const b of (blocks || [])) { if (b < 0 || b >= tag.totalBlocks) throw E.input('Block ' + b + ' is out of range.'); tag.lockBlock(b); }
+      return tag.locked.slice();
+    },
+    async slixSetPassword(session, tag, identifier, currentPassword, newPassword) {
+      if (tag.kind !== 'type5' || !tag.isSLIX) throw E.chip('SLIX passwords are only on ICODE SLIX tags.');
+      if (tag.destroyed) throw E.destroyed();
+      if (!(identifier in tag.passwords)) throw E.input('Unknown password identifier.');
+      if (newPassword.length !== 4) throw E.input('The password must be 4 bytes.');
+      session.alertMessage = 'Authenticating.'; await session.delay(250);
+      if (currentPassword) { if (!NDEF.equal(currentPassword, tag.passwords[identifier])) throw E.auth(); }
+      else if (!NDEF.equal(tag.passwords[identifier], U8(0, 0, 0, 0))) throw E.input('Enter the current password first.');
+      tag.presented[identifier] = true;
+      session.alertMessage = 'Setting the password.'; await session.delay(300);
+      tag.passwords[identifier] = new Uint8Array(newPassword);
+    },
+    async slixPresentPassword(session, tag, identifier, password) {
+      if (tag.kind !== 'type5' || !tag.isSLIX) throw E.chip('SLIX passwords are only on ICODE SLIX tags.');
+      if (tag.destroyed) throw E.destroyed();
+      if (!(identifier in tag.passwords)) throw E.input('Unknown password identifier.');
+      if (password.length !== 4) throw E.input('The password must be 4 bytes.');
+      session.alertMessage = 'Presenting the password.'; await session.delay(300);
+      if (!NDEF.equal(password, tag.passwords[identifier])) throw E.auth();
+      tag.presented[identifier] = true;
+      if (identifier === 'privacy') tag.privacyUnlocked = true;
+    },
+    async slixSetPrivacy(session, tag, enabled, password) {
+      if (tag.kind !== 'type5' || !tag.isSLIX) throw E.chip('Privacy mode is only on ICODE SLIX tags.');
+      if (tag.destroyed) throw E.destroyed();
+      if (password.length !== 4) throw E.input('The privacy password must be 4 bytes.');
+      session.alertMessage = 'Presenting the privacy password.'; await session.delay(300);
+      if (!NDEF.equal(password, tag.passwords.privacy)) throw E.auth();
+      tag.privacyUnlocked = true;
+      session.alertMessage = enabled ? 'Enabling privacy mode.' : 'Leaving privacy mode.'; await session.delay(300);
+      // Presenting the privacy password only lifts privacy until the tag loses power, so privacyOn stays set
+      // and the next session starts hidden again.
+      if (enabled) tag.privacyOn = true;
+    },
+    async slixSetEAS(session, tag, enabled) {
+      if (tag.kind !== 'type5' || !tag.isSLIX) throw E.chip('EAS is only on ICODE SLIX tags.');
+      if (tag.destroyed) throw E.destroyed();
+      session.alertMessage = enabled ? 'Setting EAS.' : 'Resetting EAS.'; await session.delay(300);
+      tag.easOn = !!enabled;
+    },
+    async slixEASAlarm(session, tag) {
+      if (tag.kind !== 'type5' || !tag.isSLIX) throw E.chip('EAS is only on ICODE SLIX tags.');
+      if (tag.destroyed) throw E.destroyed();
+      session.alertMessage = 'Sending the EAS alarm command.'; await session.delay(300);
+      return tag.easOn;
+    },
+    async slixDestroy(session, tag, password) {
+      if (tag.kind !== 'type5' || !tag.isSLIX) throw E.chip('Destroy is only on ICODE SLIX tags.');
+      if (tag.destroyed) throw E.destroyed();
+      if (password.length !== 4) throw E.input('The destroy password must be 4 bytes.');
+      session.alertMessage = 'Authenticating.'; await session.delay(300);
+      if (!NDEF.equal(password, tag.passwords.destroy)) throw E.auth();
+      session.alertMessage = 'Destroying the tag.'; await session.delay(400);
+      tag.destroyed = true;
+    },
+    async stPresentPassword(session, tag, number, password) {
+      if (tag.kind !== 'type5' || !tag.isST) throw E.chip('ST passwords are only on ST25TV tags.');
+      if (tag.destroyed) throw E.destroyed();
+      if (password.length !== 8) throw E.input('The ST password must be 8 bytes.');
+      session.alertMessage = 'Presenting the password.'; await session.delay(300);
+      if (!NDEF.equal(password, tag.stPasswords[number] || U8(0, 0, 0, 0, 0, 0, 0, 0))) throw E.auth();
+      tag.presented['st' + number] = true;
+    },
+    async stWritePassword(session, tag, number, password) {
+      if (tag.kind !== 'type5' || !tag.isST) throw E.chip('ST passwords are only on ST25TV tags.');
+      if (tag.destroyed) throw E.destroyed();
+      if (password.length !== 8) throw E.input('The ST password must be 8 bytes.');
+      if (!tag.presented['st' + number]) throw E.command('Present the current password before writing a new one.');
+      session.alertMessage = 'Writing the password.'; await session.delay(300);
+      tag.stPasswords[number] = new Uint8Array(password);
+    },
+
+    // FeliCa services: read and write 16 byte blocks without encryption, and check which services exist.
+    async feliCaRead(session, tag, serviceCode, blocks) {
+      if (tag.kind !== 'type3') throw E.chip('FeliCa commands need a FeliCa tag.');
+      const svc = tag.services[serviceCode];
+      if (!svc) throw E.command('Service 0x' + serviceCode.toString(16).toUpperCase().padStart(4, '0') + ' does not exist on this tag.');
+      session.alertMessage = 'Reading blocks.'; await session.delay(300);
+      return (blocks || []).map((b) => { if (b < 0 || b >= svc.blocks.length) throw E.command('Block ' + b + ' is out of range for this service.'); return svc.blocks[b]; });
+    },
+    async feliCaWrite(session, tag, serviceCode, block, data) {
+      if (tag.kind !== 'type3') throw E.chip('FeliCa commands need a FeliCa tag.');
+      const svc = tag.services[serviceCode];
+      if (!svc) throw E.command('Service 0x' + serviceCode.toString(16).toUpperCase().padStart(4, '0') + ' does not exist on this tag.');
+      if (!svc.writable) throw E.command('Service 0x' + serviceCode.toString(16).toUpperCase().padStart(4, '0') + ' is read only.');
+      if (data.length !== 16) throw E.input('A FeliCa block is 16 bytes.');
+      if (block < 0 || block >= svc.blocks.length) throw E.command('Block ' + block + ' is out of range for this service.');
+      session.alertMessage = 'Writing the block.'; await session.delay(300);
+      svc.blocks[block] = new Uint8Array(data);
+    },
+    async feliCaServices(session, tag, codes) {
+      if (tag.kind !== 'type3') throw E.chip('FeliCa commands need a FeliCa tag.');
+      session.alertMessage = 'Checking services.'; await session.delay(300);
+      return (codes || []).map((c) => ({ code: c, exists: !!tag.services[c] }));
+    },
+
     defaultTransport(tag) { return { type2: 'mifare', classic: 'mifare', type4: 'apdu', type5: 'iso15693', type3: 'feliCa' }[tag.kind] || 'mifare'; },
     async sendRaw(session, tag, commands) {
       if (!commands.length) throw E.input('Enter at least one command.');

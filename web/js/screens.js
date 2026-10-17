@@ -12,9 +12,39 @@ const SCREENS = (() => {
     const s = NDEF.parse(record);
     return row({ icon: s.icon, title: s.detail, subtitle: s.title, caption: UI.bytesLabel(NDEF.encodedSize(record)), onClick, subtitleWrap: false });
   }
-  const iconColorFor = (kind) => ({ erase: 'var(--red)', copy: 'var(--blue)', lock: 'var(--orange)', memory: '#5856D6', format: '#AF52DE', password: 'var(--green)', advanced: '#48484A', dump: '#FF2D55', counter: 'var(--gray)', signature: '#00C7BE' })[kind];
+  const iconColorFor = (kind) => ({ erase: 'var(--red)', copy: 'var(--blue)', lock: 'var(--orange)', memory: '#5856D6', format: '#AF52DE', password: 'var(--green)', advanced: '#48484A', dump: '#FF2D55', counter: 'var(--gray)', signature: '#00C7BE',
+    mirror: '#32ADE6', lockpages: '#C2410C', ulc: '#B7791F', desfire: '#1F7A4D', type5: '#0E6BA8', felica: '#D63384' })[kind];
   const writeBody = (records, options) => (session, tag) => SIM.ops.writeRecords(session, tag, records, options);
   const writeSuccess = (r) => `Wrote ${UI.bytesLabel(r.bytesWritten)}.${r.capacity ? ` ${UI.bytesLabel(Math.max(0, r.capacity - r.bytesWritten))} free.` : ''}${r.locked ? ' The tag is now read only.' : ''}`;
+  const writtenToTags = (n) => (n === 1 ? 'Written to 1 tag.' : `Written to ${n} tags.`);
+  const timeLabel = (d) => new Date(d).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+  const hex2 = (n) => '0x' + (n & 0xFF).toString(16).toUpperCase().padStart(2, '0');
+  const hex4 = (n) => (n & 0xFFFF).toString(16).toUpperCase().padStart(4, '0');
+  const check = (message) => UI.alert({ title: 'Check the input', message });
+  // Optional passwords: an empty field means none, anything else must be the full length.
+  const optionalBytes = (bytes) => (bytes.length ? new Uint8Array(bytes) : null);
+  const badOptional = (bytes, n) => bytes.length !== 0 && bytes.length !== n;
+  // A scan button with its explanation underneath, like a ScanButton in a Section with a footer.
+  function scanButton(o, footer, footerClass) {
+    const b = bigButton(o);
+    if (footer) b.append(el('div', { class: 'section-footer' + (footerClass ? ' ' + footerClass : ''), text: footer }));
+    return b;
+  }
+  const lockMark = () => UI.icon('lock', 'lock-mark');
+  const colorValue = (node, color) => { const v = node && node.querySelector('.value'); if (v) v.style.color = color; return node; };
+  // Originality signature verdicts, worded as in TagDetailView and SignatureToolView.
+  const VERDICTS = {
+    genuine: { title: 'Genuine NXP chip', text: "The signature matches NXP's public key for this serial number.", color: 'var(--green)', icon: 'seal' },
+    notGenuine: { title: "Signature does not match NXP's key", text: "The signature does not match NXP's public key for this serial number. The chip is likely a clone.", color: 'var(--red)', icon: 'sealx' },
+    noKey: { title: 'No public key for this chip', text: 'NXP has not published a public key for this chip, so the signature cannot be checked.', color: 'var(--secondary)', icon: 'question' },
+  };
+  // NTAG213 TT: byte 4 of READ_TT_STATUS is C for a closed loop, O for an open one and I when the chip cannot tell.
+  function tamperInfo(hexText) {
+    const b = NDEF.fromHex(hexText || '') || new Uint8Array();
+    const unknown = { text: 'Unknown', color: 'var(--secondary)' };
+    if (b.length < 5) return unknown;
+    return ({ 0x43: { text: 'Wire intact', color: 'var(--green)' }, 0x4F: { text: 'Wire open, the tag was tampered with', color: 'var(--red)' }, 0x49: { text: 'Not determined', color: 'var(--orange)' } })[b[4]] || unknown;
+  }
 
   // Read tab
   function readScreen() {
@@ -31,6 +61,7 @@ const SCREENS = (() => {
         if (STORE.scans.last) wrap.append(section({ header: 'Last scan', rows: [summaryRow(STORE.scans.last, ctx)] }));
         const recent = STORE.scans.history.slice(1);
         if (recent.length) wrap.append(section({ header: 'Recent', rows: recent.map((i) => summaryRow(i, ctx)) }));
+        if (STORE.scans.history.length) wrap.append(section({ rows: [buttonRow({ icon: 'table', title: 'Export scan log', onClick: () => UI.download('NFC scan log.csv', STORE.exportScanLogCSV(), 'text/csv') })], footer: 'A CSV file with the serial number, chip, record count and time of every scan in this session, for a spreadsheet.' }));
         if (!STORE.scans.last) wrap.append(textBlock('Scans are kept for this session. Save a tag from its details to keep it.'));
         return wrap;
       },
@@ -57,6 +88,17 @@ const SCREENS = (() => {
       build(ctx) {
         const wrap = el('div');
         const r = (title, value, icon, opts = {}) => (value == null ? null : row(Object.assign({ icon, iconBg: '#636366', title, value, valueWrap: true, accessory: 'none' }, opts)));
+        const copySignature = () => UI.copy(hexSpaced(info.signature)).then(() => UI.alert({ title: 'Copied', message: 'The 32-byte signature is on the clipboard.' }));
+        const signatureRow = () => {
+          if (!info.signature) return null;
+          const v = info.signatureVerdict && VERDICTS[info.signatureVerdict];
+          if (!v) return r('Signature', info.signature.slice(0, 16) + '…', 'signature', { valueMono: true, onClick: copySignature });
+          return colorValue(r('Signature', v.title, v.icon, { subtitle: hexSpaced(info.signature.slice(0, 16)) + '…', subtitleMono: true, onClick: copySignature }), v.color);
+        };
+        const tamperRow = () => { if (!info.tamperStatus) return null; const t = tamperInfo(info.tamperStatus); return colorValue(r('Tamper', t.text, 'shield', { subtitle: info.tamperStatus, subtitleMono: true }), t.color); };
+        // The mirror setting comes first, like TagDetailView; scans saved before the dedicated tamper row may still carry a tamper extra.
+        const extras = info.extras.filter((f) => f.label !== 'Tamper status');
+        const orderedExtras = [...extras.filter((f) => f.label === 'Mirror'), ...extras.filter((f) => f.label !== 'Mirror')];
         const rows = [
           r('Tag type', SIM.info.typeLine(info), 'wave'),
           r('Chip', SIM.info.chipLine(info), 'cpu'),
@@ -70,8 +112,10 @@ const SCREENS = (() => {
           r('Size', SIM.info.sizeLine(info), 'grid'),
           r('Writable', SIM.info.writableLine(info), 'pencil'),
           info.counter != null ? r('Counter', String(info.counter) + (info.counterEnabled === false ? ' (disabled)' : ''), 'number') : (info.counterEnabled != null ? r('Counter', info.counterEnabled ? 'Enabled' : 'Disabled', 'number') : null),
-          info.signature ? r('Signature', info.signature.slice(0, 16) + '…', 'signature', { valueMono: true, onClick: () => UI.copy(hexSpaced(info.signature)).then(() => UI.alert({ title: 'Copied', message: 'The 32-byte signature is on the clipboard.' })) }) : null,
-          ...info.extras.map((f) => r(f.label, f.value, f.icon || 'info', { valueMono: /^[0-9A-F ]+$/.test(f.value) })),
+          signatureRow(),
+          tamperRow(),
+          // Long hex values (GET_VERSION, for example) go under the title so they never run into it.
+          ...orderedExtras.map((f) => { const mono = /^[0-9A-F ]+$/.test(f.value); return mono && f.value.length > 14 ? row({ icon: f.icon || 'info', iconBg: '#636366', title: f.label, subtitle: f.value, subtitleMono: true, subtitleWrap: true, accessory: 'none' }) : r(f.label, f.value, f.icon || 'info', { valueMono: mono }); }),
         ];
         if (info.chip.notes) rows.push(r('Note', info.chip.notes, 'info'));
         wrap.append(section({ header: 'Tag', rows }));
@@ -132,8 +176,9 @@ const SCREENS = (() => {
       },
     };
   }
-  function pageRow(p, onClick, note) {
-    const node = row({ onClick, accessory: 'none', custom: el('div', { class: 'page-row' + (p.readable ? '' : ' unreadable') }, el('span', { class: 'idx', text: '0x' + p.index.toString(16).toUpperCase().padStart(2, '0') }), el('span', { class: 'bytes', text: p.readable ? NDEF.hex(p.bytes, ' ') : 'protected' }), el('span', { class: 'ascii', text: p.readable ? NDEF.ascii(p.bytes) : '' }), note ? el('span', { class: 'tag', text: note }) : null) });
+  function pageRow(p, onClick, note, locked) {
+    const node = row({ onClick, accessory: 'none', custom: el('div', { class: 'page-row' + (p.readable ? '' : ' unreadable') }, el('span', { class: 'idx', text: '0x' + p.index.toString(16).toUpperCase().padStart(2, '0') }), el('span', { class: 'bytes', text: p.readable ? NDEF.hex(p.bytes, ' ') : 'protected' }), el('span', { class: 'ascii', text: p.readable ? NDEF.ascii(p.bytes) : '' }), note ? el('span', { class: 'tag', text: note }) : null, locked ? lockMark() : null) });
+    if (locked) node.setAttribute('aria-label', `Block ${p.index}, locked`);
     node.querySelector('.body').style.flex = '1';
     return node;
   }
@@ -147,7 +192,7 @@ const SCREENS = (() => {
 
   // Write tab
   function writeScreen() {
-    let editing = false;
+    let editing = false, several = false;
     return {
       title: 'Write', largeTitle: true,
       right: (ctx) => [navButton({ icon: 'ellipsis', label: 'More', onClick: () => more(ctx) }), navButton({ title: editing ? 'Done' : 'Edit', bold: editing, onClick: () => { editing = !editing; ctx.refresh(); } })],
@@ -156,13 +201,17 @@ const SCREENS = (() => {
         const q = STORE.queue;
         const wrap = el('div');
         const rows = q.drafts.map((d, i) => draftRow(d, i, ctx));
-        rows.push(row({ icon: 'plus', iconBg: 'var(--green)', title: 'Add a record', blue: true, accessory: 'none', onClick: () => UI.sheetAddRecord((kind) => openEditor(ctx, NDEF.draft(kind, kind === 'text' ? { language: STORE.settings.defaultLanguage } : {}))) }));
+        rows.push(row({ icon: 'plus', iconBg: 'var(--green)', title: 'Add a record', blue: true, accessory: 'none', onClick: () => UI.sheetAddRecord((kind) => openEditor(ctx, NDEF.draft(kind, kind === 'text' || kind === 'smartPoster' ? { language: STORE.settings.defaultLanguage } : {}))) }));
         const n = q.drafts.length;
         wrap.append(section({ header: 'Records', rows, footer: n ? `${n === 1 ? '1 record' : n + ' records'}, ${UI.bytesLabel(STORE.queueBytes())}. An NTAG213 holds 140 bytes, an NTAG215 496, an NTAG216 868.` : 'Add a record, then hold a tag to the phone to write it.' }));
         const o = q.options;
         const summary = [o.verifyAfterWrite ? 'Verify after write' : null, o.eraseFirst ? 'Erase first' : null, o.lockAfterWrite ? 'Lock after write' : null].filter(Boolean).join(', ') || 'None';
-        wrap.append(section({ header: 'Options', rows: [row({ icon: 'gear', iconBg: '#636366', title: 'Write options', subtitle: summary, onClick: () => ctx.nav.push(writeOptionsScreen()) })] }));
-        wrap.append(bigButton({ title: 'Write to tag', icon: 'wave', disabled: !n, onClick: () => write(ctx) }));
+        wrap.append(section({ header: 'Options', rows: [
+          row({ icon: 'gear', iconBg: '#636366', title: 'Write options', subtitle: summary, onClick: () => ctx.nav.push(writeOptionsScreen()) }),
+          toggleRow({ icon: 'layers', iconBg: 'var(--blue)', title: 'Write to several tags', value: several, onChange: (v) => { several = v; ctx.refresh(); } }),
+        ], footer: several ? 'The NFC sheet stays open after each tag. Hold the tags one after another, then tap Cancel when you are done. iOS closes the sheet after 60 seconds.' : null }));
+        const lockNote = o.lockAfterWrite ? (several ? 'Every tag will be locked permanently.' : 'The tag will be locked permanently.') : null;
+        wrap.append(scanButton({ title: several ? 'Write to tags' : 'Write to tag', icon: 'wave', disabled: !n, onClick: () => write(ctx) }, lockNote, 'danger'));
         return wrap;
       },
     };
@@ -191,6 +240,15 @@ const SCREENS = (() => {
       let records;
       try { records = STORE.queueRecords(); } catch (e) { return UI.alert({ title: 'Check the input', message: e.message }); }
       const options = Object.assign({}, STORE.queue.options);
+      if (several) {
+        // One sheet for many tags: the body returns the running count the sheet shows while it waits for the next tag.
+        try {
+          const count = await UI.nfc.runBatch({ alertMessage: 'Hold your iPhone near the first tag.', body: async (s, t, handled) => { await SIM.ops.writeRecords(s, t, records, options); return `${writtenToTags(handled + 1)} Hold the next one.`; } });
+          if (options.lockAfterWrite) { STORE.queue.options.lockAfterWrite = false; STORE.saveQueue(); ctx.refresh(); }
+          UI.success(writtenToTags(count));
+        } catch (e) { fail(e); }
+        return;
+      }
       try {
         const r = await UI.nfc.run({ alertMessage: HOLD, successMessage: 'Written.', body: writeBody(records, options) });
         STORE.queue.options.lockAfterWrite = false; STORE.saveQueue(); ctx.refresh();
@@ -251,19 +309,20 @@ const SCREENS = (() => {
             case 'geo': return [f('latitude', 'Latitude', { placeholder: '43.8561', inputmode: 'decimal' }), f('longitude', 'Longitude', { placeholder: '-79.3370', inputmode: 'decimal' }), sel('geoFormat', 'Format', [{ value: 'geo', label: 'geo: URI' }, { value: 'apple', label: 'Apple Maps link' }, { value: 'google', label: 'Google Maps link' }])];
             case 'address': return [f('address', null, { placeholder: 'Street, city, province', multiline: true, autocap: 'words' }), sel('addressFormat', 'Opens in', [{ value: 'apple', label: 'Apple Maps' }, { value: 'google', label: 'Google Maps' }, { value: 'geo', label: 'geo: URI' }])];
             case 'wifi': return [f('ssid', 'Network', { placeholder: 'Name' }), f('password', 'Password', { placeholder: '8 characters or more' }), sel('auth', 'Security', NDEF.WIFI_AUTH.map((a) => ({ value: a[0], label: a[1] }))), sel('encryption', 'Encryption', NDEF.WIFI_ENC.map((a) => ({ value: a[0], label: a[1] }))), tog('hidden', 'Hidden network')];
-            case 'bluetooth': return [f('mac', 'Address', { placeholder: 'AA:BB:CC:DD:EE:FF', mono: true, autocap: 'characters' }), f('name', 'Name', { placeholder: 'Optional', autocap: 'words' })];
+            case 'bluetooth': return [f('mac', 'Address', { placeholder: 'AA:BB:CC:DD:EE:FF', mono: true, autocap: 'characters' }), f('name', 'Name', { placeholder: 'Optional', autocap: 'words' }), tog('handover', 'Wrap in Handover Select (Android pairing)', 'Android phones offer to pair only when the pairing record comes with a Handover Select record. It adds a few bytes. iPhones ignore both records.')];
             case 'social': return [sel('platform', 'Platform', NDEF.SOCIAL.map((s) => ({ value: s[0], label: s[1] }))), f('handle', 'Username', { placeholder: 'without the @' })];
             case 'app': return [f('package', 'Package', { placeholder: 'com.example.app' })];
             case 'customMIME': return [f('mime', 'MIME type', { placeholder: 'text/plain' }), ...payloadRows()];
             case 'external': return [f('domain', 'Domain', { placeholder: 'example.com' }), f('externalType', 'Type', { placeholder: 'thing' }), ...payloadRows()];
             case 'raw': case 'unknown': return [sel('tnf', 'Type name format', NDEF.TNF_LABEL.map((l, i) => ({ value: String(i), label: l }))), f('type', 'Type (hex)', { placeholder: '54', mono: true, autocap: 'characters' }), f('identifier', 'Identifier (hex)', { placeholder: 'Optional', mono: true, autocap: 'characters' }), f('payloadHex', null, { placeholder: 'Payload in hex', mono: true, autocap: 'characters', multiline: true })];
-            case 'smartPoster': return [f('url', 'URL', { type: 'url' }), f('title', 'Title', { autocap: 'sentences' })];
+            case 'smartPoster': return [f('url', 'URL', { placeholder: 'https://example.com', type: 'url', inputmode: 'url' }), f('title', 'Title', { placeholder: 'Shown before the link opens', autocap: 'sentences' }), f('language', 'Language', { placeholder: 'en', maxLength: 5 })];
             case 'empty': return [row({ title: 'Nothing to edit. An empty record takes 3 bytes.', accessory: 'none' })];
             default: return [row({ title: 'Nothing to edit.', accessory: 'none' })];
           }
         };
         footer = el('div', { class: 'section-footer' });
-        const render = () => { wrap.replaceChildren(section({ rows: makeRows(), footer })); validateNow(); };
+        const note = { smartPoster: 'A smart poster wraps the URL with a title that some readers show before opening it. iPhones open the URL. https:// is added when you leave it out.' }[d.kind];
+        const render = () => { wrap.replaceChildren(...[section({ rows: makeRows(), footer }), note ? textBlock(note) : null].filter(Boolean)); validateNow(); };
         render();
         return wrap;
       },
@@ -271,17 +330,28 @@ const SCREENS = (() => {
   };
 
   // Tools tab
-  const TOOLS = [
-    ['erase', 'Erase tag', 'Writes an empty record', 'eraser', () => eraseTool()],
-    ['copy', 'Copy tag', 'Read one tag, write another', 'docs', () => copyTool()],
-    ['lock', 'Lock tag', 'Make a tag read only, forever', 'lock', () => lockTool()],
-    ['memory', 'Memory editor', 'Read and edit single pages', 'memorychip', () => memoryEditorTool()],
-    ['format', 'Format memory', 'Prepare a blank tag for NDEF', 'format', () => formatTool()],
-    ['password', 'Password', 'Set or remove an NTAG password', 'key', () => passwordTool()],
-    ['advanced', 'Advanced commands', 'Send raw bytes to the chip', 'terminal', () => advancedTool()],
-    ['dump', 'Write dump', 'Restore a saved memory image', 'docdown', () => writeDumpTool()],
-    ['counter', 'Counter', 'Read or switch the scan counter', 'number', () => counterTool()],
-    ['signature', 'Signature', 'Read the NXP originality signature', 'signature', () => signatureTool()],
+  // Grouped by the chips each tool talks to, like ToolsView.
+  const TOOL_GROUPS = [
+    { header: 'Any tag', tools: [
+      ['erase', 'Erase tag', 'Remove every record from a tag.', 'eraser', () => eraseTool()],
+      ['copy', 'Copy tag', 'Read one tag and write it to another.', 'docs', () => copyTool()],
+      ['lock', 'Lock tag', 'Make a tag read only for good.', 'lock', () => lockTool()],
+      ['memory', 'Memory editor', 'Read and edit memory page by page.', 'memorychip', () => memoryEditorTool()],
+      ['format', 'Format memory', 'Prepare a blank or damaged tag for NDEF.', 'format', () => formatTool()],
+      ['dump', 'Write dump', 'Write a saved memory dump to a tag.', 'docdown', () => writeDumpTool()],
+      ['advanced', 'Advanced commands', 'Send raw commands to the chip.', 'terminal', () => advancedTool()],
+    ] },
+    { header: 'NTAG and Ultralight', footer: 'These tools talk to NXP NTAG and MIFARE Ultralight chips. Each screen says which models it needs.', tools: [
+      ['password', 'Password', 'Protect a tag with a password, or remove one.', 'key', () => passwordTool()],
+      ['counter', 'Counter', 'Read the tag counter or switch it on and off.', 'number', () => counterTool()],
+      ['mirror', 'Mirror', 'Put the serial number or scan count into a link.', 'linkplus', () => mirrorTool()],
+      ['lockpages', 'Lock pages', 'See which pages are locked and lock chosen ones.', 'lockstack', () => lockPagesTool()],
+      ['signature', 'Signature', 'Check that the chip is a genuine NXP chip.', 'seal', () => signatureTool()],
+      ['ulc', 'Ultralight C key', 'Test, set or remove the 3DES key.', 'key', () => ultralightCTool()],
+    ] },
+    { header: 'DESFire', tools: [['desfire', 'DESFire card', 'List applications, format, or set up NDEF.', 'creditcard', () => desfireTool()]] },
+    { header: 'ISO 15693', tools: [['type5', 'Type 5 settings', 'AFI, DSFID, block locks, SLIX and ST25TV passwords.', 'sliders', () => type5Tool()]] },
+    { header: 'FeliCa', footer: 'Every tool starts with a scan. Nothing is written until you tap the blue button and hold a tag to the phone.', tools: [['felica', 'FeliCa', 'Read and write blocks of a service.', 'grid', () => feliCaTool()]] },
   ];
   function toolsScreen() {
     return {
@@ -289,7 +359,7 @@ const SCREENS = (() => {
       right: () => [settingsButton()],
       build(ctx) {
         const wrap = el('div');
-        wrap.append(section({ rows: TOOLS.map(([id, title, subtitle, icon, make]) => row({ icon, iconBg: iconColorFor(id), title, subtitle, onClick: () => ctx.nav.push(make()) })), footer: 'Every tool starts with a scan. Nothing is written until you tap the blue button and hold a tag to the phone.' }));
+        for (const g of TOOL_GROUPS) wrap.append(section({ header: g.header, rows: g.tools.map(([id, title, subtitle, icon, make]) => row({ icon, iconBg: iconColorFor(id), title, subtitle, subtitleWrap: true, onClick: () => ctx.nav.push(make()) })), footer: g.footer }));
         return wrap;
       },
     };
@@ -332,16 +402,24 @@ const SCREENS = (() => {
       },
     };
   }
+  const LOCK_METHODS = {
+    bits: { label: 'Lock bits', icon: 'lock', explain: 'Sets the lock bits of the chip. No app and no phone can change the tag again, not even with raw commands.', warn: 'Locking is permanent. The records stay readable, but the tag can never be written, erased or formatted again, by this app or any other.', button: 'Lock tag', confirm: 'Lock this tag permanently?', message: 'The tag you scan next becomes read only forever.', confirmTitle: 'Lock', sheet: 'Tag locked.', done: 'The tag is now read only.' },
+    flag: { label: 'NDEF flag only', icon: 'doc', explain: 'Only marks the tag as read only in its capability container. Phones treat it as read only and refuse to write records, but raw page writes, the memory editor and passwords still work. Works on Type 2 and Type 5 tags.', warn: 'The read only flag is permanent too. It cannot be cleared, so phones will never write records to this tag again.', button: 'Set read only flag', confirm: 'Mark this tag read only permanently?', message: 'Phones will treat the tag you scan next as read only forever.', confirmTitle: 'Mark read only', sheet: 'Read only flag set.', done: 'The tag is now marked read only. Phones will no longer write records to it.' },
+  };
   function lockTool() {
-    let understood = false;
+    let understood = false, method = 'bits';
     return {
       title: 'Lock tag',
       build(ctx) {
+        const m = LOCK_METHODS[method];
         const wrap = el('div');
-        wrap.append(section({ rows: [toggleRow({ title: 'I understand this cannot be undone', value: understood, onChange: (v) => { understood = v; ctx.refresh(); } })], footer: 'Locking sets the lock bits on the chip. The tag keeps its records and can be read forever, but nothing can ever write to it again, not this app, not any app.', footerClass: 'danger' }));
-        wrap.append(bigButton({ title: 'Lock tag', icon: 'lock', destructive: true, disabled: !understood, onClick: async () => {
-          if (!await UI.confirm({ title: 'Lock the next tag you scan?', message: 'This is permanent.', confirmTitle: 'Lock', destructive: true })) return;
-          try { await UI.nfc.run({ alertMessage: HOLD, successMessage: 'Locked.', body: (s, t) => SIM.ops.lock(s, t) }); UI.success('The tag is read only now.'); } catch (e) { fail(e); }
+        wrap.append(segmented({ options: Object.entries(LOCK_METHODS).map(([value, x]) => ({ value, label: x.label })), value: method, onChange: (v) => { method = v; ctx.refresh(); } }));
+        wrap.append(section({ header: 'Method', rows: [row({ icon: m.icon, iconBg: 'var(--orange)', title: m.label, subtitle: m.explain, subtitleWrap: true, accessory: 'none' })] }));
+        wrap.append(section({ rows: [toggleRow({ title: 'I understand this cannot be undone', value: understood, onChange: (v) => { understood = v; ctx.refresh(); } })], footer: m.warn, footerClass: 'danger' }));
+        wrap.append(bigButton({ title: m.button, icon: 'lock', destructive: true, disabled: !understood, onClick: async () => {
+          const chosen = method, x = LOCK_METHODS[chosen];
+          if (!await UI.confirm({ title: x.confirm, message: x.message, confirmTitle: x.confirmTitle, destructive: true })) return;
+          try { await UI.nfc.run({ alertMessage: HOLD, successMessage: x.sheet, body: (s, t) => (chosen === 'bits' ? SIM.ops.lock(s, t) : SIM.ops.setNDEFReadOnlyFlag(s, t)) }); UI.success(x.done); } catch (e) { fail(e); }
         } }));
         return wrap;
       },
@@ -360,25 +438,48 @@ const SCREENS = (() => {
         ], footer: 'Reads every page of the chip. Tap a page to change it. Pages 0 to 3 hold the serial number, lock bits and capability container; the last pages hold the configuration.' }));
         wrap.append(bigButton({ title: dump ? 'Read again' : 'Read memory', icon: 'wave', onClick: async () => {
           if (password.length && password.length !== 4) return UI.alert({ title: 'Check the input', message: 'The password must be 4 bytes. Leave it empty if the tag has none.' });
-          try { dump = await UI.nfc.run({ alertMessage: HOLD, successMessage: 'Memory read.', body: (s, t) => SIM.ops.readMemory(s, t, password.length ? password : null) }); ctx.refresh(); } catch (e) { fail(e); }
+          try {
+            dump = await UI.nfc.run({ alertMessage: HOLD, successMessage: 'Memory read.', body: async (s, t) => {
+              const d = await SIM.ops.readMemory(s, t, password.length ? password : null);
+              // ISO 15693 tags report which blocks are locked (block security status), so the editor can mark them.
+              if (t.kind === 'type5') { s.alertMessage = 'Reading which blocks are locked.'; try { d.locked = (await SIM.ops.type5Settings(s, t)).lockedBlocks; } catch (e) { d.locked = null; } }
+              return d;
+            } });
+            ctx.refresh();
+          } catch (e) { fail(e); }
         } }));
         const chip = (dump && dump.chip) || {};
+        const type5 = chip.nfcForumType === 5;
+        const isLocked = (p) => !!(type5 && dump.locked && dump.locked[p.index]);
         if (dump) {
-          const note = (p) => { if (chip.nfcForumType === 5) return p.index === 0 ? 'CC' : ''; if (!chip.supportsRawPages) return ''; if (p.index <= 1) return 'UID'; if (p.index === 2) return 'lock'; if (p.index === 3) return 'CC'; if (chip.configPage != null && p.index >= chip.configPage) return ['CFG0', 'CFG1', 'PWD', 'PACK'][p.index - chip.configPage] || 'cfg'; if (chip.dynamicLockPage != null && p.index === chip.dynamicLockPage) return 'lock'; return ''; };
-          const rows = dump.pages.map((p) => pageRow(p, chip.supportsRawPages === false ? null : () => editPage(p), note(p)));
-          wrap.append(section({ header: `${dump.pages.length} pages of ${dump.pageSize} bytes`, rows, footer: chip.supportsRawPages === false ? 'This chip does not allow single pages to be written. The pages show the NDEF file as read from the tag.' : 'Pages marked in red could not be read.' }));
+          const note = (p) => { if (type5) return p.index === 0 ? 'CC' : ''; if (!chip.supportsRawPages) return ''; if (p.index <= 1) return 'UID'; if (p.index === 2) return 'lock'; if (p.index === 3) return 'CC'; if (chip.configPage != null && p.index >= chip.configPage) return ['CFG0', 'CFG1', 'PWD', 'PACK'][p.index - chip.configPage] || 'cfg'; if (chip.dynamicLockPage != null && p.index === chip.dynamicLockPage) return 'lock'; return ''; };
+          const rows = dump.pages.map((p) => pageRow(p, chip.supportsRawPages === false ? null : () => editPage(p), note(p), isLocked(p)));
+          let footer = chip.supportsRawPages === false ? 'This chip does not allow single pages to be written. The pages show the NDEF file as read from the tag.' : 'Pages marked in red could not be read.';
+          if (type5) footer = dump.locked ? 'Tap a block to edit or lock it. Block 0 holds the capability container. A lock marks blocks that can no longer be written.' : 'Tap a block to edit it. Block 0 holds the capability container. This tag did not report which blocks are locked.';
+          if (type5 && dump.locked) { const n = dump.locked.filter(Boolean).length; wrap.append(section({ rows: [row({ icon: 'lock', iconBg: 'var(--orange)', title: 'Locked blocks', value: n ? String(n) : 'None', accessory: 'none' })] })); }
+          wrap.append(section({ header: `${dump.pages.length} ${type5 ? 'blocks' : 'pages'} of ${dump.pageSize} bytes`, rows, footer }));
         }
         return wrap;
         function editPage(p) {
           let bytes = p.readable ? new Uint8Array(p.bytes) : new Uint8Array(dump.pageSize);
-          const risky = p.index <= 3 || (chip.configPage != null && p.index >= chip.configPage) || (chip.dynamicLockPage != null && p.index === chip.dynamicLockPage);
-          UI.sheet({ title: 'Page 0x' + p.index.toString(16).toUpperCase().padStart(2, '0'), build(sctx) {
+          const locked = isLocked(p);
+          const risky = type5 ? p.index === 0 : (p.index <= 3 || (chip.configPage != null && p.index >= chip.configPage) || (chip.dynamicLockPage != null && p.index === chip.dynamicLockPage));
+          const unit = type5 ? 'Block' : 'Page';
+          UI.sheet({ title: unit + ' 0x' + p.index.toString(16).toUpperCase().padStart(2, '0'), build(sctx) {
             const w = el('div');
-            w.append(section({ rows: [hexField({ label: 'Bytes', value: bytes, byteCount: dump.pageSize, onChange: (b) => { bytes = b; } })], footer: risky ? 'This page holds the serial number, lock bits, capability container or configuration. A wrong value can lock the tag for good.' : 'The page is written exactly as typed.', footerClass: risky ? 'danger' : null }));
-            w.append(bigButton({ title: 'Write page', icon: 'wave', destructive: risky, onClick: async () => {
+            const footer = locked ? 'Locked. This block can no longer be written.' : risky ? (type5 ? 'Block 0 holds the capability container. A wrong value makes the records unreadable.' : 'This page holds the serial number, lock bits, capability container or configuration. A wrong value can lock the tag for good.') : `The ${unit.toLowerCase()} is written exactly as typed.`;
+            w.append(section({ rows: [hexField({ label: 'Bytes', value: bytes, byteCount: dump.pageSize, onChange: (b) => { bytes = b; } })], footer, footerClass: risky || locked ? 'danger' : null }));
+            if (type5 && !locked) w.append(section({ rows: [buttonRow({ icon: 'lock', title: 'Lock block', destructive: true, onClick: async () => {
+              if (!await UI.confirm({ title: `Lock block ${p.index} for good?`, message: 'The block keeps its current bytes and can never be written again.', confirmTitle: 'Lock block', destructive: true })) return;
+              try {
+                dump.locked = await UI.nfc.run({ alertMessage: HOLD, successMessage: 'Block locked.', body: (s, t) => SIM.ops.type5LockBlocks(s, t, [p.index]) });
+                sctx.close(); ctx.refresh(); UI.success(`Block ${p.index} is now read only.`);
+              } catch (e) { fail(e); }
+            } })], footer: 'Locking makes the block read only forever. Write the bytes you want first.' }));
+            w.append(bigButton({ title: type5 ? 'Write block' : 'Write page', icon: 'wave', destructive: risky, disabled: locked, onClick: async () => {
               if (bytes.length !== dump.pageSize) return UI.alert({ title: 'Check the input', message: `Enter exactly ${UI.bytesLabel(dump.pageSize)}.` });
               if (risky && !await UI.confirm({ title: 'Write a system page?', message: 'This can brick the tag.', confirmTitle: 'Write', destructive: true })) return;
-              try { await UI.nfc.run({ alertMessage: HOLD, successMessage: 'Page written.', body: (s, t) => SIM.ops.writePage(s, t, p.index, bytes, password.length ? password : null) }); p.bytes = new Uint8Array(bytes); p.readable = true; sctx.close(); ctx.refresh(); UI.success(`Page ${p.index} written.`); } catch (e) { fail(e); }
+              try { await UI.nfc.run({ alertMessage: HOLD, successMessage: `${unit} written.`, body: (s, t) => SIM.ops.writePage(s, t, p.index, bytes, password.length ? password : null) }); p.bytes = new Uint8Array(bytes); p.readable = true; sctx.close(); ctx.refresh(); UI.success(`${unit} ${p.index} written.`); } catch (e) { fail(e); }
             } }));
             return w;
           } });
@@ -398,12 +499,12 @@ const SCREENS = (() => {
     });
   }
   function passwordTool() {
-    let mode = 'set', password = new Uint8Array(), pack = new Uint8Array([0, 0]), protectReads = false, fromPage = 4, authLimit = 0, current = new Uint8Array(), showCurrent = false, remove = new Uint8Array();
+    let mode = 'set', password = new Uint8Array(), pack = new Uint8Array([0, 0]), protectReads = false, fromPage = 4, authLimit = 0, current = new Uint8Array(), showCurrent = false, remove = new Uint8Array(), cfgPassword = new Uint8Array();
     return {
       title: 'Password',
       build(ctx) {
         const wrap = el('div');
-        wrap.append(segmented({ options: [{ value: 'set', label: 'Set' }, { value: 'remove', label: 'Remove' }], value: mode, onChange: (v) => { mode = v; ctx.refresh(); } }));
+        wrap.append(segmented({ options: [{ value: 'set', label: 'Set' }, { value: 'remove', label: 'Remove' }, { value: 'config', label: 'Lock config' }], value: mode, onChange: (v) => { mode = v; ctx.refresh(); } }));
         if (mode === 'set') {
           wrap.append(section({ rows: [hexField({ label: 'Password', value: password, byteCount: 4, onChange: (b) => { password = b; } }), hexField({ label: 'PACK', value: pack, byteCount: 2, onChange: (b) => { pack = b; } })], footer: 'The PACK is 2 bytes the tag answers with when the password is right. 00 00 is fine.' }));
           wrap.append(section({ rows: [
@@ -421,6 +522,16 @@ const SCREENS = (() => {
             if (!await UI.confirm({ title: 'Set the password?', message: msg, confirmTitle: 'Set password' })) return;
             try { await UI.nfc.run({ alertMessage: HOLD, successMessage: 'Password set.', body: (s, t) => SIM.ops.setPassword(s, t, { password, pack, protectFromPage: fromPage, protectReads, authLimit, currentPassword: current.length ? current : null }) }); UI.success(`Pages ${fromPage} and up now need the password to ${protectReads ? 'read and write' : 'write'}.`); } catch (e) { fail(e); }
           } }));
+        } else if (mode === 'config') {
+          wrap.append(section({ rows: [row({ icon: 'lock', iconBg: 'var(--orange)', title: 'Lock configuration', subtitle: 'Sets CFGLCK, which locks the configuration pages for good. The protected pages, read protection, attempt limit, counter and mirror settings stay exactly as they are now. The password and PACK can still be changed.', subtitleWrap: true, accessory: 'none' })], footer: 'Set the password, counter and mirror the way you want them first. Lock the configuration last, when nobody should be able to switch the protection off.' }));
+          wrap.append(section({ rows: [hexField({ label: 'Current password', value: cfgPassword, byteCount: 4, onChange: (b) => { cfgPassword = b; } })], footer: 'Only needed when the configuration pages are password protected. Leave it empty otherwise.' }));
+          wrap.append(scanButton({ title: 'Lock configuration', icon: 'lock', destructive: true, onClick: async () => {
+            if (badOptional(cfgPassword, 4)) return check('The current password must be 4 bytes. Leave it empty if the tag has none.');
+            if (!await UI.confirm({ title: 'Lock the configuration for good?', message: 'The protected pages, the protection mode, the attempt limit and the counter and mirror settings of the tag you scan next can never be changed again.', confirmTitle: 'Continue', destructive: true })) return;
+            if (!await UI.confirm({ title: 'Are you sure?', message: 'This is the last check. Locking the configuration cannot be undone by any app.', confirmTitle: 'Lock configuration', destructive: true })) return;
+            const pwd = optionalBytes(cfgPassword);
+            try { await UI.nfc.run({ alertMessage: HOLD, successMessage: 'Configuration locked.', body: (s, t) => SIM.ops.lockConfiguration(s, t, pwd) }); UI.success('The configuration of this tag is now locked for good.'); } catch (e) { fail(e); }
+          } }, 'You are asked twice before the scan starts.', 'danger'));
         } else {
           wrap.append(section({ rows: [hexField({ label: 'Current password', value: remove, byteCount: 4, onChange: (b) => { remove = b; } })], footer: 'Removes the protection so the tag works like a new one. The password bytes stay on the chip but are no longer required.' }));
           wrap.append(bigButton({ title: 'Remove password', icon: 'key', onClick: async () => {
@@ -462,7 +573,7 @@ const SCREENS = (() => {
     };
   }
   function writeDumpTool() {
-    let sourceId = 'paste', pasted = '', fileDump = null, fileName = '', from = 4, to = 225, includeSystem = false, password = new Uint8Array();
+    let sourceId = 'paste', pasted = '', fileDump = null, fileName = '', from = 4, to = 225, includeSystem = false, serial = false, password = new Uint8Array();
     const savedWithDumps = () => STORE.items.filter((i) => i.tagInfo && i.tagInfo.dump);
     const currentDump = () => {
       if (sourceId === 'paste') { if (!NDEF.isValidHex(pasted)) return null; return SIM.dumpFromFlat(NDEF.fromHex(pasted), 4); }
@@ -478,21 +589,33 @@ const SCREENS = (() => {
         if (sourceId === 'paste') rows.push(fieldRow({ value: pasted, placeholder: 'Hex bytes of the whole memory, page 0 first', multiline: true, mono: true, rows: 5, autocap: 'characters', onInput: (v) => { pasted = v; } }));
         if (sourceId === 'file') { const input = el('input', { type: 'file', style: 'display:none' }); input.addEventListener('change', () => { const f = input.files[0]; if (!f) return; f.arrayBuffer().then((buf) => { fileDump = SIM.dumpFromFlat(new Uint8Array(buf), 4); fileName = f.name; ctx.refresh(); }); }); rows.push(buttonRow({ icon: 'upload', title: fileName ? `${fileName}, ${UI.bytesLabel(SIM.dumpFlat(fileDump).length)}` : 'Choose a file', onClick: () => input.click() })); wrap.append(input); }
         wrap.append(section({ header: 'Dump', rows, footer: 'Saved tags with a memory dump appear in the list. The Read tab saves one with every scan when “Read full memory” is on in Settings.' }));
-        wrap.append(section({ header: 'Pages', rows: [stepperRow({ title: 'From page', value: from, min: 0, max: 255, onChange: (v) => { from = v; } }), stepperRow({ title: 'To page', value: to, min: 0, max: 255, onChange: (v) => { to = v; } }), toggleRow({ title: 'Include pages 0 to 3 and config pages', value: includeSystem, onChange: (v) => { includeSystem = v; } })], footer: includeSystem ? 'Serial number pages are always skipped. Lock bytes, the capability container and the configuration pages will be written as they are in the dump, which can lock or brick the tag.' : 'Only user memory inside the range is written. The serial number, lock bytes, capability container and configuration pages are skipped.', footerClass: includeSystem ? 'danger' : null }));
+        const pagesFooter = serial ? 'Pages 0 and 1 are written too, so the tag takes the serial number from the dump. Only magic clone chips accept this; a real NXP chip refuses pages 0 and 1 and the write stops there. Page 2 carries the second check byte of the serial number, so keep it in the range. Lock bits and configuration pages are written as well and can lock the tag for good.'
+          : includeSystem ? 'The lock bytes, capability container and configuration pages will be written as they are in the dump. Wrong values cannot be undone. The serial number pages are skipped because the tag does not accept writes to them.'
+            : 'Only user memory inside the range is written. The serial number, lock bytes, capability container and configuration pages are skipped.';
+        wrap.append(section({ header: 'Pages', rows: [
+          stepperRow({ title: 'From page', value: from, min: 0, max: 255, onChange: (v) => { from = v; } }),
+          stepperRow({ title: 'To page', value: to, min: 0, max: 255, onChange: (v) => { to = v; } }),
+          toggleRow({ title: 'Include pages 0 to 3 and config pages', value: includeSystem || serial, disabled: serial, onChange: (v) => { includeSystem = v; ctx.refresh(); } }),
+          toggleRow({ title: 'Also write serial number pages (magic chips only)', value: serial, onChange: (v) => { serial = v; ctx.refresh(); } }),
+        ], footer: pagesFooter, footerClass: includeSystem || serial ? 'danger' : null }));
         wrap.append(section({ rows: [hexField({ label: 'Password (optional)', value: password, byteCount: 4, onChange: (b) => { password = b; } })] }));
         wrap.append(bigButton({ title: 'Write dump', icon: 'docdown', onClick: async () => {
           const dump = currentDump();
           if (!dump || !dump.pages.length) return UI.alert({ title: 'Check the input', message: 'Choose a source with at least one page.' });
           if (from > to) return UI.alert({ title: 'Check the input', message: 'The start page must not be after the end page.' });
           if (password.length && password.length !== 4) return UI.alert({ title: 'Check the input', message: 'The password must be 4 bytes. Leave it empty if the tag has none.' });
-          if (!await UI.confirm({ title: 'Write the dump?', message: `Pages ${from} to ${to} of the next tag you scan are overwritten.`, confirmTitle: 'Write', destructive: true })) return;
+          const withSerial = serial, system = includeSystem || serial;
+          const message = withSerial ? `Pages 0, 1 and ${Math.max(from, 2)} to ${to} of the next tag you scan are overwritten, serial number included.` : `Pages ${from} to ${to} of the next tag you scan are overwritten.`;
+          if (!await UI.confirm({ title: 'Write the dump?', message, confirmTitle: 'Write', destructive: true })) return;
           try {
             const written = await UI.nfc.run({ alertMessage: HOLD, successMessage: 'Written.', body: (s, t) => {
               const chip = t.spec;
-              let range = [from, to];
-              if (!includeSystem && chip.userRange) range = [Math.max(from, chip.userRange[0]), Math.min(to, chip.userRange[1])];
-              else if (includeSystem) range = [Math.max(from, 2), to];
-              return SIM.ops.writeDump(s, t, dump, range, password.length ? password : null);
+              let range = [from, to], source = dump;
+              if (!system && chip.userRange) range = [Math.max(from, chip.userRange[0]), Math.min(to, chip.userRange[1])];
+              else range = [Math.max(from, 2), to];
+              // The range starts at page 2; pages 0 and 1 join it on their own when serial number pages are on.
+              if (withSerial) { source = Object.assign({}, dump, { pages: dump.pages.filter((p) => p.index <= 1 || (p.index >= range[0] && p.index <= range[1])) }); range = [0, range[1]]; }
+              return SIM.ops.writeDump(s, t, source, range, password.length ? password : null, withSerial);
             } });
             UI.success(`Wrote ${written} pages.`);
           } catch (e) { fail(e); }
@@ -502,7 +625,7 @@ const SCREENS = (() => {
     };
   }
   function counterTool() {
-    let values = null, enable = true;
+    let values = null, enable = true, needsPassword = false, password = new Uint8Array();
     return {
       title: 'Counter',
       build(ctx) {
@@ -511,22 +634,516 @@ const SCREENS = (() => {
         wrap.append(bigButton({ title: 'Read counter', icon: 'number', onClick: async () => {
           try { values = await UI.nfc.run({ alertMessage: HOLD, successMessage: 'Counter read.', body: async (s, t) => { if (t.spec.counterCount === 3) { const out = []; for (let a = 0; a < 3; a++) out.push(await SIM.ops.readCounter(s, t, a)); return out; } return [await SIM.ops.readCounter(s, t, 2)]; } }); ctx.refresh(); } catch (e) { fail(e); }
         } }));
-        wrap.append(section({ rows: [toggleRow({ title: 'Counter enabled', subtitle: 'Applies to the next NTAG you scan.', value: enable, onChange: (v) => { enable = v; ctx.refresh(); } })] }));
+        wrap.append(section({ rows: [
+          toggleRow({ title: 'Counter enabled', subtitle: 'Applies to the next NTAG you scan.', value: enable, onChange: (v) => { enable = v; ctx.refresh(); } }),
+          toggleRow({ title: 'Counter needs the password', value: needsPassword, onChange: (v) => { needsPassword = v; } }),
+          hexField({ label: 'Password (optional)', value: password, byteCount: 4, onChange: (b) => { password = b; } }),
+        ], footer: "Only NTAG 213, 215 and 216 can switch their counter on or off. With Counter needs the password on, the tag only tells its count to a reader that gave the password first. Choose the state you want, then hold the tag. Enter the password if the tag's configuration is password protected." }));
         wrap.append(bigButton({ title: enable ? 'Enable counter' : 'Disable counter', icon: 'wave', onClick: async () => {
-          try { await UI.nfc.run({ alertMessage: HOLD, successMessage: enable ? 'Counter enabled.' : 'Counter disabled.', body: (s, t) => SIM.ops.setCounter(s, t, enable, null) }); UI.success(enable ? 'The tag counts scans from now on.' : 'The tag no longer counts scans.'); } catch (e) { fail(e); }
+          if (badOptional(password, 4)) return check('The password must be 4 bytes. Leave it empty if the tag has none.');
+          const on = enable, protect = needsPassword, pwd = optionalBytes(password);
+          const done = on ? `The counter is now enabled. ${protect ? 'Reading it needs the password.' : 'Any reader can read it.'}` : 'The counter is now disabled.';
+          try { await UI.nfc.run({ alertMessage: HOLD, successMessage: on ? 'Counter enabled.' : 'Counter disabled.', body: (s, t) => SIM.ops.setCounter(s, t, on, protect, pwd) }); UI.success(done); } catch (e) { fail(e); }
         } }));
         return wrap;
       },
     };
   }
   function signatureTool() {
-    let sig = null;
+    let result = null;
     return {
       title: 'Signature',
       build(ctx) {
         const wrap = el('div');
-        wrap.append(section({ rows: [sig ? el('div', { class: 'cell plain' }, el('div', { class: 'result-row', text: hexSpaced(sig) })) : row({ title: 'Not read yet', subtitle: 'NXP signs every NTAG21x and Ultralight EV1 at the factory. The 32 bytes prove the chip is genuine.', subtitleWrap: true, accessory: 'none' }), sig ? buttonRow({ icon: 'copy', title: 'Copy', onClick: async () => { await UI.copy(hexSpaced(sig)); UI.alert({ title: 'Copied', message: '32 bytes as hex.' }); } }) : null], footer: 'Verify it against NXP’s public key with the NXP TagInfo app.' }));
-        wrap.append(bigButton({ title: 'Read signature', icon: 'signature', onClick: async () => { try { sig = await UI.nfc.run({ alertMessage: HOLD, successMessage: 'Signature read.', body: (s, t) => SIM.ops.readSignature(s, t) }); ctx.refresh(); } catch (e) { fail(e); } } }));
+        if (!result) wrap.append(section({ rows: [row({ title: 'Not read yet', subtitle: "NXP signs every NTAG 213, 215, 216 and MIFARE Ultralight EV1 chip with a 32-byte originality signature tied to its serial number. The app checks it against NXP's public key to tell a genuine NXP chip from a clone.", subtitleWrap: true, accessory: 'none' })] }));
+        else {
+          const v = VERDICTS[result.verdict];
+          wrap.append(section({ header: 'Result', rows: [
+            row({ iconPlain: v.icon, iconColor: v.color, title: v.title, subtitle: v.text, subtitleWrap: true, accessory: 'none' }),
+            result.signature ? el('div', { class: 'cell plain' }, el('div', { class: 'result-row', text: hexSpaced(result.signature) })) : null,
+            result.signature ? buttonRow({ icon: 'copy', title: 'Copy', onClick: async () => { await UI.copy(hexSpaced(result.signature)); UI.alert({ title: 'Copied', message: '32 bytes as hex.' }); } }) : null,
+          ], footer: `Read at ${timeLabel(result.readAt)}. The check uses the serial number as well as the signature, and runs on your iPhone without a network connection. The web preview simulates the check.` }));
+        }
+        wrap.append(bigButton({ title: 'Read signature', icon: 'signature', onClick: async () => {
+          try {
+            result = await UI.nfc.run({ alertMessage: HOLD, successMessage: 'Signature checked.', body: async (s, t) => {
+              const verdict = await SIM.ops.verifySignature(s, t);
+              return { verdict, signature: verdict === 'noKey' ? null : await SIM.ops.readSignature(s, t), readAt: new Date() };
+            } });
+            ctx.refresh();
+          } catch (e) { fail(e); }
+        } }));
+        return wrap;
+      },
+    };
+  }
+
+  // Mirror: an NTAG21x writes its serial number or read counter into a link while it is read.
+  const MIRROR_KINDS = {
+    uid: { label: 'UID', about: 'The tag writes its 7-byte serial number as 14 hex digits.', example: '04A2246A4F6B80', valueName: 'serial number' },
+    counter: { label: 'Counter', about: 'The tag writes its read counter as 6 hex digits. The counter is switched on for you and goes up by one for each read.', example: '00002A', valueName: 'read counter' },
+    both: { label: 'Both', about: 'The tag writes its serial number, the letter x, then its read counter. The counter is switched on for you.', example: '04A2246A4F6B80x00002A', valueName: 'serial number and read counter' },
+  };
+  const MIRROR_SETTING_NAMES = { none: 'Off', uid: 'Serial number', counter: 'Read counter', both: 'Serial number and counter' };
+  function mirrorTool() {
+    let url = 'https://example.com/tag?id={mirror}', kind = 'uid', password = new Uint8Array(), setting = null, lastWritten = null;
+    const problem = () => {
+      const u = url.trim();
+      if (!u) return 'Enter a link.';
+      if (u.split('{mirror}').length > 2) return 'Use {mirror} only once.';
+      if (!/^[a-z][a-z0-9+.-]*:\S+$/i.test(u)) return 'Enter a full link, for example https://example.com/tag?id={mirror}.';
+      return null;
+    };
+    const passwordProblem = () => (badOptional(password, 4) ? 'The password must be 4 bytes. Leave it empty if the tag has none.' : null);
+    return {
+      title: 'Mirror',
+      build(ctx) {
+        const wrap = el('div');
+        const k = MIRROR_KINDS[kind];
+        const stored = el('div', { class: 'result-row' }), seen = el('div', { class: 'result-row' });
+        // The link as stored (with placeholder zeros) and as a phone reads it, kept current while typing.
+        const preview = () => {
+          const m = SIM.ops.mirroredURL(url.trim() || 'https://example.com/tag?id={mirror}', kind);
+          stored.textContent = m.fullURL;
+          seen.textContent = m.fullURL.slice(0, m.placeholderIndex) + k.example + m.fullURL.slice(m.placeholderIndex + k.example.length);
+        };
+        wrap.append(section({ header: 'Link', rows: [fieldRow({ value: url, placeholder: 'https://example.com/tag?id={mirror}', type: 'url', inputmode: 'url', onInput: (v) => { url = v; preview(); } })], footer: 'Type {mirror} where the value should go. Without it, the value goes at the end of the link.' }));
+        wrap.append(section({ header: 'Mirror', rows: [selectRow({ title: 'Mirror', value: kind, options: Object.entries(MIRROR_KINDS).map(([value, x]) => ({ value, label: x.label })), onChange: (v) => { kind = v; ctx.refresh(); } })], footer: k.about }));
+        wrap.append(section({ header: 'Result', rows: [row({ title: 'Written to the tag', custom: stored, accessory: 'none' }), row({ title: 'What a phone sees, for example', custom: seen, accessory: 'none' })], footer: 'The zeros are placeholders. The chip swaps them for live values while it is read, so the stored link never changes.' }));
+        preview();
+        wrap.append(section({ header: 'Password', rows: [hexField({ label: 'Password', value: password, byteCount: 4, onChange: (b) => { password = b; } })], footer: 'Only needed when the tag is password protected.' }));
+        wrap.append(scanButton({ title: 'Write mirrored URL', icon: 'wave', onClick: async () => {
+          const err = problem() || passwordProblem(); if (err) return check(err);
+          const u = url.trim(), kd = kind, pwd = optionalBytes(password);
+          try {
+            lastWritten = await UI.nfc.run({ alertMessage: HOLD, successMessage: 'Mirrored link written.', body: (s, t) => SIM.ops.writeMirroredURL(s, t, u, kd, pwd) });
+            ctx.refresh();
+            UI.success(`The tag now holds the link. Each read shows the ${MIRROR_KINDS[kd].valueName} in place of the zeros.`);
+          } catch (e) { fail(e); }
+        } }, 'Works on NTAG 213, 215 and 216, including the F and TT models. The link replaces every record on the tag.'));
+        if (lastWritten) wrap.append(section({ header: 'Last written', rows: [el('div', { class: 'cell plain' }, el('div', { class: 'result-row', text: lastWritten }))] }));
+        if (setting) {
+          wrap.append(section({ header: 'Mirror setting', rows: [
+            row({ title: 'Mirror', value: MIRROR_SETTING_NAMES[setting.kind] || 'Off', accessory: 'none' }),
+            setting.kind !== 'none' ? row({ title: 'Starts at', value: `Page ${setting.page}, byte ${setting.byte}`, accessory: 'none' }) : null,
+          ], footer: `Read at ${timeLabel(setting.readAt)}.` }));
+        }
+        wrap.append(section({ rows: [buttonRow({ icon: 'search', title: 'Read mirror setting', onClick: async () => {
+          try { setting = await UI.nfc.run({ alertMessage: HOLD, successMessage: 'Mirror setting read.', body: async (s, t) => Object.assign(await SIM.ops.readMirror(s, t), { readAt: new Date() }) }); ctx.refresh(); } catch (e) { fail(e); }
+        } })], footer: 'Shows what the tag mirrors and where in its memory the value starts.' }));
+        wrap.append(section({ rows: [buttonRow({ icon: 'link', title: 'Turn mirror off', onClick: async () => {
+          const err = passwordProblem(); if (err) return check(err);
+          const pwd = optionalBytes(password);
+          try { await UI.nfc.run({ alertMessage: HOLD, successMessage: 'Mirror turned off.', body: (s, t) => SIM.ops.disableMirror(s, t, pwd) }); if (setting) { setting = null; ctx.refresh(); } UI.success('The mirror is off. The tag now returns the link exactly as stored.'); } catch (e) { fail(e); }
+        } })], footer: 'The link stays on the tag with its placeholder zeros. Only the live values stop.' }));
+        return wrap;
+      },
+    };
+  }
+
+  // Lock pages: static and dynamic lock bits, one group per bit.
+  function lockPagesTool() {
+    let state = null, selected = new Set(), password = new Uint8Array();
+    const label = (g) => (g.from === 3 && g.to === 3 ? 'Page 3, capability container' : g.from === g.to ? `Page ${g.from}` : `Pages ${g.from} to ${g.to}`);
+    const chosen = () => state.groups.filter((g) => selected.has(g.from));
+    return {
+      title: 'Lock pages',
+      build(ctx) {
+        const wrap = el('div');
+        wrap.append(scanButton({ title: state ? 'Read again' : 'Read lock state', icon: 'search', onClick: async () => {
+          try {
+            state = await UI.nfc.run({ alertMessage: HOLD, successMessage: 'Lock state read.', body: async (s, t) => ({ groups: await SIM.ops.lockState(s, t), chip: SIM.info.chipLine({ chip: t.spec }), uid: NDEF.hex(t.uid), readAt: new Date() }) });
+            selected = new Set(); ctx.refresh();
+          } catch (e) { fail(e); }
+        } }, 'Reads the lock bits of an NTAG or MIFARE Ultralight tag. Each lock bit covers one page or a group of pages, and once set it can never be cleared.'));
+        if (!state) return wrap;
+        const lockedCount = state.groups.filter((g) => g.locked).length;
+        wrap.append(section({ header: 'Tag', rows: [
+          row({ title: 'Chip', value: state.chip, valueWrap: true, accessory: 'none' }),
+          row({ title: 'Serial number', value: hexSpaced(state.uid).replace(/ /g, ':'), valueMono: true, valueWrap: true, accessory: 'none' }),
+          row({ title: 'Locked groups', value: `${lockedCount} of ${state.groups.length}`, accessory: 'none' }),
+        ], footer: `Read at ${timeLabel(state.readAt)}.` }));
+        const rows = state.groups.map((g) => {
+          if (g.locked) return row({ title: label(g), subtitle: 'Locked', right: lockMark(), accessory: 'none' });
+          if (!g.lockable) return row({ title: label(g), subtitle: 'Cannot be locked', accessory: 'none', disabled: true });
+          return toggleRow({ title: label(g), value: selected.has(g.from), onChange: (v) => { if (v) selected.add(g.from); else selected.delete(g.from); ctx.refresh(); } });
+        });
+        wrap.append(section({ header: 'Pages', rows, footer: 'Switch on the groups you want to lock. Page 3 holds the capability container; pages 4 and up hold your records.' }));
+        const open = state.groups.filter((g) => !g.locked && g.lockable);
+        wrap.append(section({ rows: [
+          buttonRow({ title: 'Select every unlocked group', disabled: !open.length || open.every((g) => selected.has(g.from)), onClick: () => { open.forEach((g) => selected.add(g.from)); ctx.refresh(); } }),
+          buttonRow({ title: 'Clear selection', disabled: !selected.size, onClick: () => { selected = new Set(); ctx.refresh(); } }),
+        ] }));
+        wrap.append(section({ header: 'Password', rows: [hexField({ label: 'Password', value: password, byteCount: 4, onChange: (b) => { password = b; } })], footer: 'Only needed when the lock pages are password protected.' }));
+        wrap.append(scanButton({ title: 'Lock selected pages', icon: 'lock', destructive: true, disabled: !selected.size, onClick: async () => {
+          const groups = chosen().map((g) => Object.assign({}, g, { locked: true }));
+          if (!groups.length) return check('Choose at least one group of pages to lock.');
+          if (badOptional(password, 4)) return check('The password must be 4 bytes. Leave it empty if the tag has none.');
+          const pages = groups.reduce((n, g) => n + g.to - g.from + 1, 0);
+          if (!await UI.confirm({ title: pages === 1 ? 'Lock 1 page for good?' : `Lock ${pages} pages for good?`, message: 'Locked pages can never be written again, and the lock bits can never be cleared.', confirmTitle: 'Lock', destructive: true })) return;
+          const uid = state.uid, pwd = optionalBytes(password);
+          try {
+            const after = await UI.nfc.run({ alertMessage: 'Hold your iPhone near the same tag.', successMessage: 'Pages locked.', body: (s, t) => {
+              if (NDEF.hex(t.uid) !== uid) throw SIM.E.input('This is a different tag. Read its lock state first.');
+              return SIM.ops.lockPages(s, t, groups, pwd);
+            } });
+            state = Object.assign({}, state, { groups: after, readAt: new Date() }); selected = new Set(); ctx.refresh();
+            UI.success(pages === 1 ? 'The page is locked. The list shows the new lock state.' : 'The pages are locked. The list shows the new lock state.');
+          } catch (e) { fail(e); }
+        } }, 'Locking is permanent. Locked pages can never be written again, by this app or any other, and the lock bits can never be cleared. Hold the same tag you read.', 'danger'));
+        return wrap;
+      },
+    };
+  }
+
+  // Ultralight C: 16-byte 3DES key, AUTH0 (first protected page) and AUTH1 (write only).
+  function ultralightCTool() {
+    const DEFAULT_KEY = NDEF.utf8('BREAKMEIFYOUCAN!');
+    let current = new Uint8Array(DEFAULT_KEY), next = new Uint8Array(), firstPage = 4, writeOnly = true;
+    const asText = (b) => (b.length === 16 ? NDEF.ascii(b) : 'Needs 16 bytes');
+    const protectionFooter = () => {
+      if (firstPage >= 48) return 'Page 48 is past the end of the memory, so no page needs the key.';
+      const hex = firstPage.toString(16).toUpperCase().padStart(2, '0');
+      return `${writeOnly ? 'Writing' : 'Reading and writing'} pages ${firstPage} (0x${hex}) and up needs the key. User memory starts at page 4; the key and settings sit at pages 42 to 47. Turn off “Only protect writes” and phones can no longer read the records without the key.`;
+    };
+    return {
+      title: 'Ultralight C key',
+      build(ctx) {
+        const wrap = el('div');
+        const currentText = row({ title: 'As text', value: asText(current), valueMono: true, accessory: 'none' });
+        wrap.append(section({ header: 'Current key', rows: [
+          hexField({ label: 'Key', value: current, byteCount: 16, onChange: (b) => { current = b; currentText.querySelector('.value').textContent = asText(b); } }),
+          currentText,
+          buttonRow({ icon: 'key', title: 'Use default key', onClick: () => { current = new Uint8Array(DEFAULT_KEY); ctx.refresh(); } }),
+        ], footer: 'New Ultralight C tags ship with the key BREAKMEIFYOUCAN!. The key can never be read back from a tag, so keep a copy of any key you set.' }));
+        wrap.append(section({ rows: [buttonRow({ icon: 'checkcircle', title: 'Test key', onClick: async () => {
+          if (current.length !== 16) return check('Enter the current 16-byte key.');
+          const key = new Uint8Array(current);
+          try { await UI.nfc.run({ alertMessage: HOLD, successMessage: 'Key accepted.', body: (s, t) => SIM.ops.ultralightCAuthenticate(s, t, key) }); UI.success('The tag accepted the key.'); } catch (e) { fail(e); }
+        } })], footer: 'Runs the 3DES handshake with the current key. Nothing on the tag changes.' }));
+        wrap.append(section({ header: 'New key', rows: [
+          hexField({ label: 'Key', value: next, byteCount: 16, onChange: (b) => { next = b; } }),
+          buttonRow({ icon: 'sparkle', title: 'Generate random key', onClick: () => { next = crypto.getRandomValues(new Uint8Array(16)); ctx.refresh(); } }),
+        ], footer: '16 bytes. Write the new key down before you set it. Without it, the protected pages are out of reach for good.' }));
+        const footer = el('div', { class: 'section-footer', text: protectionFooter() });
+        wrap.append(section({ header: 'Protection', rows: [
+          stepperRow({ title: 'Protect from page', value: firstPage, min: 3, max: 48, onChange: (v) => { firstPage = v; footer.textContent = protectionFooter(); } }),
+          toggleRow({ title: 'Only protect writes', value: writeOnly, onChange: (v) => { writeOnly = v; footer.textContent = protectionFooter(); } }),
+        ], footer }));
+        wrap.append(scanButton({ title: 'Set key and protection', icon: 'key', onClick: async () => {
+          if (current.length !== 16) return check('Enter the current 16-byte key.');
+          if (next.length !== 16) return check('Enter a new 16-byte key.');
+          const cur = new Uint8Array(current), key = new Uint8Array(next), page = firstPage, wo = writeOnly;
+          if (!await UI.confirm({ title: 'Set a new key?', message: `The tag you scan next will need the new key to ${wo ? 'write' : 'read or write'} pages ${page} and up. The key can never be read back from the tag.`, confirmTitle: 'Set key' })) return;
+          try {
+            await UI.nfc.run({ alertMessage: HOLD, successMessage: 'Key set.', body: (s, t) => SIM.ops.ultralightCSetKey(s, t, cur, key, page, wo) });
+            current = key; ctx.refresh();
+            UI.success(`The new key is set and pages ${page} and up are protected. The current key field now holds the new key.`);
+          } catch (e) { fail(e); }
+        } }, 'Authenticates with the current key, writes the new key, then sets the first protected page.'));
+        wrap.append(section({ rows: [buttonRow({ icon: 'lock', title: 'Remove protection', onClick: async () => {
+          if (current.length !== 16) return check('Enter the current 16-byte key.');
+          const key = new Uint8Array(current);
+          try { await UI.nfc.run({ alertMessage: HOLD, successMessage: 'Protection removed.', body: (s, t) => SIM.ops.ultralightCRemoveProtection(s, t, key) }); UI.success('Every page can be read and written without the key again.'); } catch (e) { fail(e); }
+        } })], footer: 'Authenticates with the current key and opens every page again. The key itself stays on the tag.' }));
+        return wrap;
+      },
+    };
+  }
+
+  // DESFire: overview without a key, then format and NDEF application setup with the card master key.
+  function desfireTool() {
+    let reading = null, masterKey = new Uint8Array(8), size = 2048, formatFirst = false;
+    const HOLD_CARD = 'Hold your iPhone near the card.';
+    const keyType = (maxKeys) => ({ 0: 'DES or 2K3DES', 1: '3K3DES', 2: 'AES' })[(maxKeys >> 6) & 3] || 'Unknown';
+    const yesNo = (bit) => (bit ? 'Yes' : 'No');
+    const overview = async (s, t) => Object.assign(await SIM.ops.desfireOverview(s, t), { chip: t.spec.name, storage: t.spec.userMemoryBytes, readAt: new Date() });
+    const keyProblem = () => (masterKey.length === 8 || masterKey.length === 16 ? null : 'The master key must be 8 or 16 bytes.');
+    return {
+      title: 'DESFire card',
+      build(ctx) {
+        const wrap = el('div');
+        wrap.append(scanButton({ title: reading ? 'Read again' : 'Read card', icon: 'search', onClick: async () => {
+          try { reading = await UI.nfc.run({ alertMessage: HOLD_CARD, successMessage: 'Card read.', body: overview }); ctx.refresh(); } catch (e) { fail(e); }
+        } }, 'Reads the version, the applications, the free memory and the master key settings. Most cards allow this without a key.'));
+        if (reading) {
+          wrap.append(section({ header: 'Card', rows: [
+            row({ title: 'Chip', value: reading.chip, valueWrap: true, accessory: 'none' }),
+            row({ title: 'Storage', value: UI.bytesLabel(reading.storage), accessory: 'none' }),
+            row({ title: 'Free memory', value: reading.freeMemory == null ? 'Not reported' : UI.bytesLabel(reading.freeMemory), accessory: 'none' }),
+            row({ title: 'NDEF application', value: reading.hasNDEFApplication ? 'Yes' : 'No', accessory: 'none' }),
+            row({ title: 'Version', subtitle: hexSpaced(reading.version), subtitleMono: true, subtitleWrap: true, accessory: 'none' }),
+          ], footer: `Read at ${timeLabel(reading.readAt)}. DESFire D40 cards do not report their free memory.` }));
+          const apps = reading.applications;
+          wrap.append(section({ header: 'Applications', rows: apps.length ? apps.map((a) => row({ title: a, mono: true, value: a === '000001' && reading.hasNDEFApplication ? 'NDEF' : null, accessory: 'none' })) : [row({ title: 'No applications', accessory: 'none' })], footer: 'Application IDs are shown most significant byte first, the way datasheets write them. An empty list can also mean the card only lists its applications after authentication.' }));
+          const ks = reading.keySettings;
+          wrap.append(section({ header: 'Key settings', rows: [
+            row({ title: 'Master key type', value: keyType(reading.maxKeys), accessory: 'none' }),
+            row({ title: 'Master key can change', value: yesNo(ks & 0x01), accessory: 'none' }),
+            row({ title: 'List without key', value: yesNo(ks & 0x02), accessory: 'none' }),
+            row({ title: 'Create without key', value: yesNo(ks & 0x04), accessory: 'none' }),
+            row({ title: 'Settings can change', value: yesNo(ks & 0x08), accessory: 'none' }),
+          ], footer: 'These settings belong to the card master key, the key that guards formatting and creating applications.' }));
+        }
+        wrap.append(section({ header: 'Master key', rows: [
+          hexField({ label: 'Card master key', value: masterKey, onChange: (b) => { masterKey = b; } }),
+          buttonRow({ icon: 'key', title: 'Use default key', onClick: () => { masterKey = new Uint8Array(8); ctx.refresh(); } }),
+        ], footer: '8 bytes for DES or 16 bytes for 2K3DES. A new card uses 8 zero bytes. The key is only used to authenticate; it is never changed.' }));
+        let ndefFooter = 'Creates application 000001 with the NFC Forum name D2760000850101, a capability container file E103 and an NDEF file E104 of the chosen size, so phones see a normal NDEF tag.';
+        if (formatFirst) ndefFooter += ' Format first deletes every application on the card before creating it.';
+        else if (reading && reading.freeMemory != null) { ndefFooter += ` The card reported ${UI.bytesLabel(reading.freeMemory)} free.`; if (size > reading.freeMemory) ndefFooter += ' The NDEF file may not fit; choose a smaller size.'; }
+        wrap.append(section({ header: 'NDEF application', rows: [
+          stepperRow({ title: 'NDEF file', value: size, min: 256, max: 7936, step: 256, format: (v) => UI.bytesLabel(v), onChange: (v) => { if (v !== size) { size = v; ctx.refresh(); } } }),
+          toggleRow({ title: 'Format first', value: formatFirst, onChange: (v) => { formatFirst = v; ctx.refresh(); } }),
+        ], footer: ndefFooter }));
+        wrap.append(scanButton({ title: 'Create NDEF application', icon: 'wave', onClick: async () => {
+          const err = keyProblem(); if (err) return check(err);
+          const ff = formatFirst, sz = size, key = new Uint8Array(masterKey);
+          const message = ff ? `The card you scan next is formatted first, which deletes every application on it, then gets an NDEF application with a ${UI.bytesLabel(sz)} NDEF file.` : `The card you scan next gets an NDEF application with a ${UI.bytesLabel(sz)} NDEF file. Existing applications stay.`;
+          if (!await UI.confirm({ title: 'Create the NDEF application?', message, confirmTitle: ff ? 'Format and create' : 'Create application', destructive: ff })) return;
+          try {
+            reading = await UI.nfc.run({ alertMessage: HOLD_CARD, successMessage: 'NDEF application created.', body: async (s, t) => { await SIM.ops.desfireCreateNDEFApplication(s, t, key, ff, sz); return overview(s, t); } });
+            ctx.refresh();
+            UI.success(`The card now has an NDEF application with a ${UI.bytesLabel(sz)} NDEF file. Write records to it in the Write tab.`);
+          } catch (e) { fail(e); }
+        } }, 'Afterwards the card works like any NDEF tag: write records to it in the Write tab.'));
+        wrap.append(scanButton({ title: 'Format card', icon: 'trash', destructive: true, onClick: async () => {
+          const err = keyProblem(); if (err) return check(err);
+          if (!await UI.confirm({ title: 'Format this card?', message: 'Formatting deletes every application and file on the card, including any NDEF data.', confirmTitle: 'Continue', destructive: true })) return;
+          if (!await UI.confirm({ title: 'Erase everything on the card?', message: 'This cannot be undone. The card you scan next is wiped back to an empty card.', confirmTitle: 'Format card', destructive: true })) return;
+          const key = new Uint8Array(masterKey);
+          try {
+            reading = await UI.nfc.run({ alertMessage: HOLD_CARD, successMessage: 'Card formatted.', body: async (s, t) => { await SIM.ops.desfireFormat(s, t, key); return overview(s, t); } });
+            ctx.refresh();
+            UI.success('The card is empty. Create the NDEF application to use it as an NDEF tag again.');
+          } catch (e) { fail(e); }
+        } }, 'Formatting deletes every application and file on the card for good. It needs the card master key.', 'danger'));
+        return wrap;
+      },
+    };
+  }
+
+  // Type 5 (ISO 15693): AFI, DSFID and block locks for every tag, then ICODE SLIX and ST25TV commands.
+  const SLIX_PASSWORDS = [['read', 'Read'], ['write', 'Write'], ['privacy', 'Privacy'], ['destroy', 'Destroy'], ['easAFI', 'EAS and AFI']];
+  const slixName = (id) => ({ read: 'read', write: 'write', privacy: 'privacy', destroy: 'destroy', easAFI: 'EAS and AFI' })[id];
+  // Locked block flags as "0 to 3, 7, 10 to 12".
+  function blockRanges(flags) {
+    const out = [];
+    for (let i = 0; i < flags.length; i++) {
+      if (!flags[i]) continue;
+      let j = i; while (j + 1 < flags.length && flags[j + 1]) j++;
+      out.push(i === j ? String(i) : `${i} to ${j}`); i = j;
+    }
+    return out.join(', ');
+  }
+  function type5Tool() {
+    let mode = 'settings', reading = null, afi = new Uint8Array(), lockAFI = false, dsfid = new Uint8Array(), lockDSFID = false, lockFrom = 0, lockTo = 0;
+    let slixId = 'read', slixCurrent = new Uint8Array(), slixNew = new Uint8Array(), privacyPassword = new Uint8Array(), destroyPassword = new Uint8Array();
+    let stNumber = 0, stCurrent = new Uint8Array(), stNew = new Uint8Array();
+    const run = (successMessage, body) => UI.nfc.run({ alertMessage: HOLD, successMessage, body });
+    const hexSp = (b) => NDEF.hex(b, ' ');
+    const MODES = { settings: 'AFI, DSFID and block locks work on every ISO 15693 tag.', slix: 'For NXP ICODE SLIX, SLIX2 and DNA tags. Other chips refuse these commands.', st: 'For ST25TV tags from STMicroelectronics. Other chips refuse these commands.' };
+    return {
+      title: 'Type 5 settings',
+      build(ctx) {
+        const wrap = el('div');
+        wrap.append(segmented({ options: [{ value: 'settings', label: 'Settings' }, { value: 'slix', label: 'ICODE SLIX' }, { value: 'st', label: 'ST25TV' }], value: mode, onChange: (v) => { mode = v; ctx.refresh(); } }));
+        wrap.append(textBlock(MODES[mode]));
+        if (mode === 'settings') buildSettings(ctx, wrap);
+        else if (mode === 'slix') buildSLIX(ctx, wrap);
+        else buildST(ctx, wrap);
+        return wrap;
+      },
+    };
+    function buildSettings(ctx, wrap) {
+      wrap.append(scanButton({ title: reading ? 'Read again' : 'Read settings', icon: 'search', onClick: async () => {
+        try {
+          reading = await run('Settings read.', async (s, t) => Object.assign(await SIM.ops.type5Settings(s, t), { chip: SIM.info.chipLine({ chip: t.spec }), readAt: new Date() }));
+          afi = new Uint8Array([reading.afi]); dsfid = new Uint8Array([reading.dsfid]);
+          const last = reading.totalBlocks - 1; lockFrom = Math.min(lockFrom, last); lockTo = Math.min(lockTo, last);
+          ctx.refresh();
+        } catch (e) { fail(e); }
+      } }, 'Reads the DSFID, the AFI, the memory size and which blocks are locked.'));
+      if (reading) {
+        const locked = reading.lockedBlocks.filter(Boolean).length;
+        const family = reading.isSLIX ? ' ICODE SLIX family. Its passwords, privacy and EAS are under ICODE SLIX above.' : reading.isST ? ' ST25TV chip. Its passwords are under ST25TV above.' : '';
+        wrap.append(section({ header: 'Tag', rows: [
+          row({ title: 'Chip', value: reading.chip, valueWrap: true, accessory: 'none' }),
+          row({ title: 'DSFID', value: hex2(reading.dsfid), valueMono: true, accessory: 'none' }),
+          row({ title: 'AFI', value: hex2(reading.afi), valueMono: true, accessory: 'none' }),
+          row({ title: 'Memory', value: `${reading.totalBlocks} blocks of ${reading.blockSize} bytes`, accessory: 'none' }),
+          row({ title: 'Locked blocks', value: locked ? String(locked) : 'None', subtitle: locked ? 'Locked: blocks ' + blockRanges(reading.lockedBlocks) : null, subtitleWrap: true, accessory: 'none' }),
+        ], footer: `Read at ${timeLabel(reading.readAt)}.${family}` }));
+      }
+      const writeByte = async (name, bytes, lock, op) => {
+        if (bytes.length !== 1) return check(`Enter the ${name} as one byte, for example 00.`);
+        const v = bytes[0];
+        if (lock && !await UI.confirm({ title: `Write and lock the ${name}?`, message: `The ${name} becomes ${hex2(v)} forever. It can never be changed again.`, confirmTitle: 'Write and lock', destructive: true })) return;
+        try { await run(lock ? `${name} written and locked.` : `${name} written.`, (s, t) => op(s, t, v, lock)); UI.success(lock ? `The ${name} is now ${hex2(v)} and locked.` : `The ${name} is now ${hex2(v)}.`); } catch (e) { fail(e); }
+      };
+      wrap.append(section({ header: 'AFI', rows: [
+        hexField({ label: 'AFI', value: afi, byteCount: 1, onChange: (b) => { afi = b; } }),
+        toggleRow({ title: 'Lock the AFI', value: lockAFI, onChange: (v) => { lockAFI = v; } }),
+        buttonRow({ icon: 'pencil', title: 'Write AFI', onClick: () => writeByte('AFI', afi, lockAFI, SIM.ops.type5WriteAFI) }),
+      ], footer: 'The application family identifier tells readers what kind of item the tag is on. 00 means any. Locking makes the value permanent.' }));
+      wrap.append(section({ header: 'DSFID', rows: [
+        hexField({ label: 'DSFID', value: dsfid, byteCount: 1, onChange: (b) => { dsfid = b; } }),
+        toggleRow({ title: 'Lock the DSFID', value: lockDSFID, onChange: (v) => { lockDSFID = v; } }),
+        buttonRow({ icon: 'pencil', title: 'Write DSFID', onClick: () => writeByte('DSFID', dsfid, lockDSFID, SIM.ops.type5WriteDSFID) }),
+      ], footer: 'The data storage format identifier is one byte that says how the memory is organised. Most readers ignore it. Locking makes the value permanent.' }));
+      const maxBlock = reading ? reading.totalBlocks - 1 : 255;
+      const lockLabel = () => (lockFrom === lockTo ? `Lock block ${lockFrom}` : `Lock blocks ${lockFrom} to ${lockTo}`);
+      const lockButton = buttonRow({ icon: 'lock', title: lockLabel(), destructive: true, onClick: async () => {
+        if (lockFrom > lockTo) return check('The first block must not be after the last one.');
+        const blocks = []; for (let b = lockFrom; b <= lockTo; b++) blocks.push(b);
+        if (!await UI.confirm({ title: blocks.length === 1 ? `Lock block ${lockFrom} for good?` : `Lock blocks ${lockFrom} to ${lockTo} for good?`, message: 'These blocks become read only forever. This cannot be undone.', confirmTitle: 'Lock', destructive: true })) return;
+        try {
+          const flags = await run(blocks.length === 1 ? 'Block locked.' : 'Blocks locked.', (s, t) => SIM.ops.type5LockBlocks(s, t, blocks));
+          if (reading && flags.length === reading.totalBlocks) { reading.lockedBlocks = flags; ctx.refresh(); }
+          UI.success(blocks.length === 1 ? `Block ${blocks[0]} is now read only.` : `Blocks ${lockFrom} to ${lockTo} are now read only.`);
+        } catch (e) { fail(e); }
+      } });
+      const relabel = () => { lockButton.querySelector('.title').textContent = lockLabel(); };
+      wrap.append(section({ header: 'Lock blocks', rows: [
+        stepperRow({ title: 'From block', value: lockFrom, min: 0, max: maxBlock, onChange: (v) => { lockFrom = v; relabel(); } }),
+        stepperRow({ title: 'To block', value: lockTo, min: 0, max: maxBlock, onChange: (v) => { lockTo = v; relabel(); } }),
+        lockButton,
+      ], footer: "Locked blocks can never be written again, by any reader. Block 0 holds the capability container. Read the settings first so the steppers match the tag's size.", footerClass: 'danger' }));
+    }
+    function buildSLIX(ctx, wrap) {
+      wrap.append(section({ header: 'Passwords', rows: [
+        selectRow({ title: 'Password', value: slixId, options: SLIX_PASSWORDS.map(([value, label]) => ({ value, label })), onChange: (v) => { slixId = v; } }),
+        hexField({ label: 'Current password', value: slixCurrent, byteCount: 4, onChange: (b) => { slixCurrent = b; } }),
+        hexField({ label: 'New password', value: slixNew, byteCount: 4, onChange: (b) => { slixNew = b; } }),
+        buttonRow({ icon: 'key', title: 'Set password', onClick: async () => {
+          if (badOptional(slixCurrent, 4)) return check('The current password must be 4 bytes. Leave it empty if the tag does not ask for it.');
+          if (slixNew.length !== 4) return check('Enter a new 4-byte password.');
+          const id = slixId, cur = optionalBytes(slixCurrent), next = new Uint8Array(slixNew);
+          if (!await UI.confirm({ title: `Change the ${slixName(id)} password?`, message: `The tag will answer to ${hexSp(next)} from now on. Write it down first; it cannot be read back.`, confirmTitle: 'Change' })) return;
+          try { await run('Password set.', (s, t) => SIM.ops.slixSetPassword(s, t, id, cur, next)); UI.success(`The ${slixName(id)} password is now ${hexSp(next)}. Keep it somewhere safe.`); } catch (e) { fail(e); }
+        } }),
+        buttonRow({ icon: 'key', title: 'Present password', onClick: async () => {
+          if (slixCurrent.length !== 4) return check('Enter the current 4-byte password.');
+          const id = slixId, pwd = new Uint8Array(slixCurrent);
+          try { await run('Password accepted.', (s, t) => SIM.ops.slixPresentPassword(s, t, id, pwd)); UI.success(`The tag accepted the ${slixName(id)} password.`); } catch (e) { fail(e); }
+        } }),
+      ], footer: 'Each SLIX password is 4 bytes and guards one feature: reading, writing, privacy mode, destroy, or EAS and AFI. Changing a password needs the current one. Present password sends the current password and tells you whether the tag accepts it; the tag stays unlocked only while it has power, which ends with the scan. On the pretend tag every password starts as 00 00 00 00.' }));
+      const privacy = async (on) => {
+        if (privacyPassword.length !== 4) return check('Enter the 4-byte privacy password.');
+        const pwd = new Uint8Array(privacyPassword);
+        if (on && !await UI.confirm({ title: 'Turn privacy mode on?', message: `The tag hides until the privacy password ${hexSp(pwd)} is presented. Without that password you cannot use the tag again.`, confirmTitle: 'Turn on', destructive: true })) return;
+        try { await run(on ? 'Privacy mode on.' : 'Privacy mode left.', (s, t) => SIM.ops.slixSetPrivacy(s, t, on, pwd)); UI.success(on ? 'The tag is in privacy mode. Present the privacy password to use it again.' : 'The tag left privacy mode until it next loses power. Once it leaves the field it hides again.'); } catch (e) { fail(e); }
+      };
+      wrap.append(section({ header: 'Privacy', rows: [
+        hexField({ label: 'Privacy password', value: privacyPassword, byteCount: 4, onChange: (b) => { privacyPassword = b; } }),
+        buttonRow({ icon: 'eye', title: 'Turn privacy on', onClick: () => privacy(true) }),
+        buttonRow({ icon: 'eye', title: 'Leave privacy mode', onClick: () => privacy(false) }),
+      ], footer: 'In privacy mode the tag hides its memory and serial number until the privacy password is presented. Leaving privacy mode only lasts until the tag next loses power, so it hides again once it leaves the field.' }));
+      const eas = async (on) => {
+        try { await run(on ? 'EAS on.' : 'EAS off.', (s, t) => SIM.ops.slixSetEAS(s, t, on)); UI.success(on ? 'EAS is on. Security gates now sound for this tag.' : 'EAS is off.'); } catch (e) { fail(e); }
+      };
+      wrap.append(section({ header: 'EAS', rows: [
+        buttonRow({ icon: 'bell', title: 'Turn EAS on', onClick: () => eas(true) }),
+        buttonRow({ icon: 'bell', title: 'Turn EAS off', onClick: () => eas(false) }),
+        buttonRow({ icon: 'bell', title: 'Test EAS alarm', onClick: async () => {
+          try { const on = await run('EAS checked.', (s, t) => SIM.ops.slixEASAlarm(s, t)); UI.alert({ title: on ? 'EAS is on' : 'EAS is off', message: on ? 'The tag answered the EAS alarm. Security gates would sound.' : 'The tag did not answer the EAS alarm.' }); } catch (e) { fail(e); }
+        } }),
+      ], footer: 'EAS is the shop anti-theft bit: with it on, security gates sound for the tag.' }));
+      wrap.append(section({ header: 'Destroy', rows: [
+        hexField({ label: 'Destroy password', value: destroyPassword, byteCount: 4, onChange: (b) => { destroyPassword = b; } }),
+        buttonRow({ icon: 'trash', title: 'Destroy tag', destructive: true, onClick: async () => {
+          if (destroyPassword.length !== 4) return check('Enter the 4-byte destroy password.');
+          const pwd = new Uint8Array(destroyPassword);
+          if (!await UI.confirm({ title: 'Destroy this tag?', message: 'Destroy is permanent. The tag never answers any reader again.', confirmTitle: 'Continue', destructive: true })) return;
+          if (!await UI.confirm({ title: 'Destroy the tag for good?', message: 'This is the last question. The tag you scan next stops answering every reader, forever.', confirmTitle: 'Destroy tag', destructive: true })) return;
+          try { await run('Tag destroyed.', (s, t) => SIM.ops.slixDestroy(s, t, pwd)); UI.success('The tag is destroyed and will not answer again.'); } catch (e) { fail(e); }
+        } }),
+      ], footer: 'Destroy switches the tag off forever. It never answers any reader again and nothing can bring it back. In the web preview, Reset simulated tags in Settings brings the pretend tag back.', footerClass: 'danger' }));
+    }
+    function buildST(ctx, wrap) {
+      wrap.append(section({ header: 'Password', rows: [
+        stepperRow({ title: 'Password number', subtitle: '0 guards the configuration, 1 to 3 the memory areas.', value: stNumber, min: 0, max: 3, onChange: (v) => { stNumber = v; } }),
+        hexField({ label: 'Current password', value: stCurrent, byteCount: 8, onChange: (b) => { stCurrent = b; } }),
+        hexField({ label: 'New password', value: stNew, byteCount: 8, onChange: (b) => { stNew = b; } }),
+      ], footer: "ST25TV passwords are 8 bytes. New chips use 8 zero bytes. Check the chip's datasheet for what each password guards." }));
+      wrap.append(section({ rows: [buttonRow({ icon: 'key', title: 'Present password', onClick: async () => {
+        if (stCurrent.length !== 8) return check('Enter the current 8-byte password. New chips use 8 zero bytes.');
+        const n = stNumber, pwd = new Uint8Array(stCurrent);
+        try { await run('Password accepted.', (s, t) => SIM.ops.stPresentPassword(s, t, n, pwd)); UI.success(`The tag accepted password ${n}.`); } catch (e) { fail(e); }
+      } })], footer: 'Tells you whether the tag accepts the password. The tag stays unlocked only while it has power, which ends with the scan.' }));
+      wrap.append(section({ rows: [buttonRow({ icon: 'pencil', title: 'Write password', onClick: async () => {
+        if (stCurrent.length !== 8) return check('Enter the current 8-byte password. New chips use 8 zero bytes.');
+        if (stNew.length !== 8) return check('Enter a new 8-byte password.');
+        const n = stNumber, cur = new Uint8Array(stCurrent), next = new Uint8Array(stNew);
+        if (!await UI.confirm({ title: `Change password ${n}?`, message: `Password ${n} becomes ${hexSp(next)}. Write it down first; it cannot be read back.`, confirmTitle: 'Change' })) return;
+        try {
+          await run('Password written.', async (s, t) => { await SIM.ops.stPresentPassword(s, t, n, cur); await SIM.ops.stWritePassword(s, t, n, next); });
+          stCurrent = next; stNew = new Uint8Array(); ctx.refresh();
+          UI.success(`Password ${n} is now ${hexSp(next)}.`);
+        } catch (e) { fail(e); }
+      } })], footer: 'The tag only takes a new password right after the current one, so both are sent in the same scan. Write the new password down first.' }));
+    }
+  }
+
+  // FeliCa: read and write 16-byte blocks of a service without encryption, and check which services exist.
+  // "0-3" or "0, 4, 8-9" as block numbers; null when the text is not a list of blocks from 0 to 255.
+  function parseBlockList(text) {
+    const out = [];
+    for (const part of text.split(/[\s,]+/).filter(Boolean)) {
+      const m = part.match(/^(\d+)(?:-(\d+))?$/);
+      if (!m) return null;
+      const a = Number(m[1]), b = m[2] != null ? Number(m[2]) : a;
+      if (a > b || b > 255) return null;
+      for (let i = a; i <= b; i++) out.push(i);
+    }
+    return out.length ? out : null;
+  }
+  function feliCaTool() {
+    let service = new Uint8Array([0x00, 0x0B]), blocksText = '0-3', result = null, writeBlock = 0, writeData = new Uint8Array(), servicesText = '0009, 000B, 008B, 090F, 108F', services = null;
+    const HOLD_CARD = 'Hold your iPhone near the card.';
+    const MAX = 32;
+    const code = () => (service[0] << 8) | service[1];
+    return {
+      title: 'FeliCa',
+      build(ctx) {
+        const wrap = el('div');
+        wrap.append(section({ header: 'Service', rows: [
+          hexField({ label: 'Service code', value: service, byteCount: 2, onChange: (b) => { service = b; } }),
+          fieldRow({ label: 'Blocks', value: blocksText, placeholder: 'for example 0-13', mono: true, onInput: (v) => { blocksText = v; } }),
+        ], footer: 'Service codes are written most significant byte first. 000B reads the user blocks of a FeliCa Lite-S card and 0009 reads and writes them. List blocks as numbers and ranges, such as 0-13 or 0, 4, 8-9. The pretend FeliCa tag has blocks 0 to 3 in both services.' }));
+        wrap.append(scanButton({ title: 'Read blocks', icon: 'search', onClick: async () => {
+          if (service.length !== 2) return check('Enter a 2-byte service code, for example 00 0B.');
+          const blocks = parseBlockList(blocksText);
+          if (!blocks) return check('List the blocks as numbers or ranges, for example 0-13.');
+          if (blocks.length > MAX) return check(`Read at most ${MAX} blocks at a time.`);
+          const c = code();
+          try { const data = await UI.nfc.run({ alertMessage: HOLD_CARD, successMessage: 'Blocks read.', body: (s, t) => SIM.ops.feliCaRead(s, t, c, blocks) }); result = { code: c, rows: blocks.map((b, i) => ({ block: b, bytes: data[i] })), readAt: new Date() }; ctx.refresh(); } catch (e) { fail(e); }
+        } }, 'iPhone only finds FeliCa cards whose system code this app declares: 12FC (NDEF), FE00, 0003 and 8008. Services that need encryption cannot be read.'));
+        if (result) {
+          wrap.append(section({ header: `Service ${hex4(result.code)}`, rows: result.rows.map((r) => row({ title: `Block ${r.block}`, custom: el('div', { class: 'result-row block16', text: NDEF.hex(r.bytes, ' ') + '\n' + NDEF.ascii(r.bytes) }), accessory: 'none', onClick: () => { writeBlock = r.block; writeData = new Uint8Array(r.bytes); ctx.refresh(); } })), footer: `Read at ${timeLabel(result.readAt)}. Tap a block to load it into the write section below.` }));
+        }
+        wrap.append(section({ header: 'Write a block', rows: [
+          stepperRow({ title: 'Block', value: writeBlock, min: 0, max: 255, onChange: (v) => { writeBlock = v; } }),
+          hexField({ label: 'Data', value: writeData, byteCount: 16, onChange: (b) => { writeData = b; } }),
+          buttonRow({ icon: 'pencil', title: 'Write block', onClick: async () => {
+            if (service.length !== 2) return check('Enter a 2-byte service code, for example 00 0B.');
+            if (writeData.length !== 16) return check('Enter exactly 16 bytes for the block.');
+            const c = code(), blk = writeBlock, data = new Uint8Array(writeData);
+            if (blk >= 0x80 && !await UI.confirm({ title: 'Write a system block?', message: `Block ${blk} is a system block on FeliCa Lite-S. Some values there, such as in the MC block, make the card read only for good.`, confirmTitle: 'Write block', destructive: true })) return;
+            try { await UI.nfc.run({ alertMessage: HOLD_CARD, successMessage: 'Block written.', body: (s, t) => SIM.ops.feliCaWrite(s, t, c, blk, data) }); UI.success(`Block ${blk} of service ${hex4(c)} was written.`); } catch (e) { fail(e); }
+          } }),
+        ], footer: 'Writes 16 bytes to one block of the service code above. Only services that allow writing without encryption accept it, such as 0009 on FeliCa Lite-S.' }));
+        wrap.append(section({ header: 'Service codes', rows: [
+          fieldRow({ value: servicesText, placeholder: '0009, 000B, 008B, 090F, 108F', mono: true, onInput: (v) => { servicesText = v; } }),
+          buttonRow({ icon: 'search', title: 'Check services', onClick: async () => {
+            const parts = servicesText.split(/[\s,]+/).filter(Boolean);
+            if (!parts.length || parts.some((p) => !/^[0-9a-f]{4}$/i.test(p))) return check('Enter service codes as four hex digits each, for example 000B, 090F.');
+            if (parts.length > MAX) return check(`Check at most ${MAX} service codes at a time.`);
+            const codes = parts.map((p) => parseInt(p, 16));
+            try { const list = await UI.nfc.run({ alertMessage: HOLD_CARD, successMessage: 'Services checked.', body: (s, t) => SIM.ops.feliCaServices(s, t, codes) }); services = { list, checkedAt: new Date() }; ctx.refresh(); } catch (e) { fail(e); }
+          } }),
+        ], footer: 'Four hex digits per service code, separated by commas or spaces.' }));
+        if (services) wrap.append(section({ header: 'Services', rows: services.list.map((x) => colorValue(row({ title: hex4(x.code), mono: true, value: x.exists ? 'Found' : 'Not found', accessory: 'none' }), x.exists ? 'var(--green)' : 'var(--secondary)')), footer: `Checked at ${timeLabel(services.checkedAt)}. Found services can still need encryption to read.` }));
         return wrap;
       },
     };
@@ -575,7 +1192,7 @@ const SCREENS = (() => {
         const info = STORE.itemInfo(it);
         if (info) wrap.append(section({ header: 'Tag', rows: [row({ icon: 'cpu', iconBg: '#636366', title: SIM.info.chipLine(info), subtitle: SIM.info.serialLine(info), subtitleMono: true, caption: `Scanned ${UI.dateLabel(info.scannedAt)}`, onClick: () => ctx.nav.push(tagDetailScreen(info)) })] }));
         wrap.append(bigButton({ title: 'Write to tag', icon: 'wave', disabled: !records.length, onClick: async () => {
-          let recs; try { recs = it.kind === 'profile' ? it.drafts.map(NDEF.buildDraft) : records; } catch (e) { return UI.alert({ title: 'Check the input', message: e.message }); }
+          let recs; try { recs = it.kind === 'profile' ? it.drafts.flatMap(NDEF.buildAll) : records; } catch (e) { return UI.alert({ title: 'Check the input', message: e.message }); }
           if (!recs.length) return UI.alert({ title: 'Check the input', message: 'Add a record first.' });
           try { const r = await UI.nfc.run({ alertMessage: HOLD, successMessage: 'Written.', body: writeBody(recs, { verifyAfterWrite: true }) }); UI.success(writeSuccess(r)); } catch (e) { fail(e); }
         } }));
@@ -625,7 +1242,16 @@ const SCREENS = (() => {
       const wrap = el('div');
       wrap.append(section({ rows: [row({ icon: 'wave', title: 'NFC Editor', subtitle: 'Web preview of version 1.0', accessory: 'none' })] }));
       wrap.append(section({ rows: [row({ title: 'Reads, writes and edits NFC tags. Every tool that other apps sell as an upgrade is here and free.', subtitleWrap: true, accessory: 'none' })], footer: 'Everything stays on your iPhone. No accounts, no analytics.' }));
-      wrap.append(section({ rows: [row({ title: 'Source on GitHub', blue: true, onClick: () => UI.openURL('https://github.com/katsuma0/nfc-editor'), accessory: 'chevron' })], footer: 'iOS cannot read MIFARE Classic data or emulate a tag, so this app does not either.' }));
+      const steps = ['Open Shortcuts and tap Automation.', 'Tap New Automation, or the plus button, and choose NFC.', 'Tap Scan and hold your iPhone near the tag, then name it.', 'Choose Run Immediately if you do not want to be asked each time.', 'Pick the action to run, for example Open URL, Set Focus or an NFC Editor action.'];
+      wrap.append(section({ header: 'Automations', rows: [
+        row({ icon: 'layers', iconBg: '#5856D6', title: 'Run an action when a tag is scanned', subtitle: 'iOS runs automations on a tag scan from the Shortcuts app, not from other apps. To set one up:', subtitleWrap: true, accessory: 'none' }),
+        el('div', { class: 'cell plain' }, el('ol', { class: 'steps' }, steps.map((t) => el('li', { text: t })))),
+      ], footer: 'iOS reads the tag for the automation itself, so the tag does not need any records and NFC Editor does not need to be open.' }));
+      wrap.append(section({ header: 'Shortcuts actions', rows: [
+        row({ icon: 'wave', title: 'Read NFC tag', subtitle: 'Opens the app, scans a tag and returns its records as text, one line per record.', subtitleWrap: true, accessory: 'none' }),
+        row({ icon: 'pencil', iconBg: 'var(--green)', title: 'Write profile to tag', subtitle: 'Opens the app and writes a saved profile to the next tag you hold, then checks it.', subtitleWrap: true, accessory: 'none' }),
+      ], footer: 'Find both in the Shortcuts app under NFC Editor, or ask Siri to “Read an NFC tag with NFC Editor”. iOS only lets an app use NFC while it is in front, so both actions open the app and show the scanning sheet. The web preview cannot run them.' }));
+      wrap.append(section({ rows: [row({ title: 'Source on GitHub', blue: true, onClick: () => UI.openURL('https://github.com/katsuma0/nfc-editor'), accessory: 'chevron' })], footer: 'iOS does not let apps read MIFARE Classic data blocks or emulate a tag, so NFC Editor does neither. Core NFC only works while the app is open and in front, and an app cannot start an action on its own when a tag is scanned; use a Shortcuts automation for that.' }));
       return wrap;
     } };
   }

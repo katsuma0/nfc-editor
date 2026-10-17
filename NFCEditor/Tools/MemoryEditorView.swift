@@ -3,11 +3,15 @@ import SwiftUI
 import UIKit
 import CoreNFC
 
-/// Reads the whole memory of a tag and lets you rewrite it one page at a time.
+/// Reads the whole memory of a tag and lets you rewrite it one page at a time. On Type 5 tags it also
+/// shows which blocks are locked and can lock single blocks.
 @MainActor
 struct MemoryEditorView: View {
     @Environment(AppState.self) private var app
     @State private var dump: MemoryDump?
+    /// Type 5 only: the blocks known to be locked, and whether the tag reported its lock state at all.
+    @State private var lockedBlocks: Set<Int> = []
+    @State private var lockStateKnown = false
     @State private var password = Data()
     @State private var selectedPage: MemoryPage?
     @State private var exportURL: URL?
@@ -49,10 +53,16 @@ struct MemoryEditorView: View {
                 page: page,
                 pageSize: dump?.pageSize ?? 4,
                 warning: warning(for: page.index),
-                password: sessionPassword
-            ) { index, bytes in
-                pageWritten(index: index, bytes: bytes)
-            }
+                password: sessionPassword,
+                isType5: isType5,
+                locked: isLocked(page.index) == true,
+                onWritten: { index, bytes in
+                    pageWritten(index: index, bytes: bytes)
+                },
+                onLocked: { index in
+                    blockLocked(index: index)
+                }
+            )
         }
         .alertItem($alert)
     }
@@ -86,8 +96,11 @@ struct MemoryEditorView: View {
     private func summarySection(_ dump: MemoryDump) -> some View {
         Section {
             LabeledContent("Chip", value: dump.chip?.name ?? "Unknown")
-            LabeledContent("Pages", value: pagesLabel(dump))
+            LabeledContent(isType5 ? "Blocks" : "Pages", value: pagesLabel(dump))
             LabeledContent("Bytes", value: ByteFormatter.bytes(dump.readableByteCount))
+            if isType5 && lockStateKnown {
+                LabeledContent("Locked blocks", value: "\(lockedBlocks.count)")
+            }
             LabeledContent("Read", value: dump.readAt.formatted(date: .abbreviated, time: .shortened))
         } header: {
             Text("Tag")
@@ -101,17 +114,17 @@ struct MemoryEditorView: View {
                     Button {
                         selectedPage = page
                     } label: {
-                        PageRow(page: page, pageSize: dump.pageSize, warning: warning(for: page.index))
+                        PageRow(page: page, pageSize: dump.pageSize, warning: warning(for: page.index), locked: isLocked(page.index))
                     }
                     .buttonStyle(.plain)
                     .listRowBackground(rowBackground(page))
                 } else {
-                    PageRow(page: page, pageSize: dump.pageSize, warning: warning(for: page.index))
+                    PageRow(page: page, pageSize: dump.pageSize, warning: warning(for: page.index), locked: isLocked(page.index))
                         .listRowBackground(rowBackground(page))
                 }
             }
         } header: {
-            Text("Pages")
+            Text(isType5 ? "Blocks" : "Pages")
         } footer: {
             Text(pagesFooter(dump))
         }
@@ -121,6 +134,17 @@ struct MemoryEditorView: View {
 
     private var sessionPassword: Data? {
         password.count == 4 ? password : nil
+    }
+
+    private var isType5: Bool {
+        dump?.chip?.nfcForumType == 5
+    }
+
+    /// Nil when the lock state is unknown, which is always the case for chips other than Type 5.
+    private func isLocked(_ index: Int) -> Bool? {
+        guard isType5 else { return nil }
+        if lockedBlocks.contains(index) { return true }
+        return lockStateKnown ? false : nil
     }
 
     private func pagesLabel(_ dump: MemoryDump) -> String {
@@ -146,7 +170,10 @@ struct MemoryEditorView: View {
             return "This chip does not allow single pages to be written. The pages show the NDEF file as read from the tag."
         }
         if dump.chip?.nfcForumType == 5 {
-            return "Tap a page to edit it. Page 0 holds the capability container."
+            if lockStateKnown {
+                return "Tap a block to edit or lock it. Block 0 holds the capability container. A lock marks blocks that can no longer be written."
+            }
+            return "Tap a block to edit it. Block 0 holds the capability container. This tag did not report which blocks are locked."
         }
         return "Tap a page to edit it. Pages 0 to 3 hold the serial number, lock bits and capability container. Pages marked in red could not be read."
     }
@@ -198,11 +225,25 @@ struct MemoryEditorView: View {
                 let result = try await app.nfc.run(
                     alertMessage: "Hold your iPhone near the tag.",
                     successMessage: "Memory read."
-                ) { session, tag in
-                    try await TagOperations.readMemory(session, tag, password: key)
+                ) { session, tag -> MemoryReadResult in
+                    let memory = try await TagOperations.readMemory(session, tag, password: key)
+                    var locks: [Bool]?
+                    if case .iso15693(let iso15693) = tag, let last = memory.pages.map({ $0.index }).max(), last >= 0 {
+                        session.alertMessage = "Reading which blocks are locked."
+                        // Not every Type 5 tag answers the security status command; the dump is still worth showing.
+                        locks = try? await ISO15693Commands.blockSecurityStatus(iso15693, from: 0, to: last)
+                    }
+                    return MemoryReadResult(dump: memory, blockLocks: locks)
                 }
-                dump = result
-                exportURL = writeExportFile(result)
+                dump = result.dump
+                if let locks = result.blockLocks {
+                    lockedBlocks = Set(locks.indices.filter { locks[$0] })
+                    lockStateKnown = true
+                } else {
+                    lockedBlocks = []
+                    lockStateKnown = false
+                }
+                exportURL = writeExportFile(result.dump)
                 Haptics.success()
             } catch {
                 if NFCEditorError.map(error).isCancellation { return }
@@ -219,6 +260,10 @@ struct MemoryEditorView: View {
         current.pages[position].readable = true
         dump = current
         exportURL = writeExportFile(current)
+    }
+
+    private func blockLocked(index: Int) {
+        lockedBlocks.insert(index)
     }
 
     private func copyHex() {
@@ -243,11 +288,17 @@ struct MemoryEditorView: View {
     }
 }
 
-/// One monospaced line per page: "0x04  03 0B D1 01  ...." plus an optional caution.
+private struct MemoryReadResult: Sendable {
+    var dump: MemoryDump
+    var blockLocks: [Bool]?
+}
+
+/// One monospaced line per page: "0x04  03 0B D1 01  ...." plus an optional caution and, on Type 5 tags, a lock marker.
 private struct PageRow: View {
     let page: MemoryPage
     let pageSize: Int
     let warning: String?
+    let locked: Bool?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
@@ -258,12 +309,19 @@ private struct PageRow: View {
                     .foregroundStyle(page.readable ? Color.primary : Color.red)
                 Text("  " + asciiLabel)
                     .foregroundStyle(.secondary)
+                if locked == true {
+                    Spacer(minLength: 8)
+                    Image(systemName: "lock.fill")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                        .accessibilityLabel("Locked")
+                }
             }
             .font(.system(.callout, design: .monospaced))
             .lineLimit(1)
             .minimumScaleFactor(0.6)
             if !page.readable {
-                Text("Not readable. The page may need a password or does not exist.")
+                Text("Not readable. It may need a password or may not exist.")
                     .font(.caption)
                     .foregroundStyle(.red)
             } else if let warning {
@@ -297,21 +355,35 @@ private struct PageRow: View {
     }
 }
 
-/// Sheet that edits the bytes of one page and writes them back to the tag.
+/// Sheet that edits the bytes of one page and writes them back to the tag. On Type 5 tags it can also lock the block.
 @MainActor
 private struct PageEditorSheet: View {
     @Environment(AppState.self) private var app
     @Environment(\.dismiss) private var dismiss
     @State private var bytes: Data
     @State private var alert: AlertItem?
+    @State private var showingLockConfirmation = false
+    @State private var showingWriteConfirmation = false
 
     private let page: MemoryPage
     private let pageSize: Int
     private let warning: String?
     private let password: Data?
+    private let isType5: Bool
+    private let locked: Bool
     private let onWritten: (Int, Data) -> Void
+    private let onLocked: (Int) -> Void
 
-    init(page: MemoryPage, pageSize: Int, warning: String?, password: Data?, onWritten: @escaping (Int, Data) -> Void) {
+    init(
+        page: MemoryPage,
+        pageSize: Int,
+        warning: String?,
+        password: Data?,
+        isType5: Bool,
+        locked: Bool,
+        onWritten: @escaping (Int, Data) -> Void,
+        onLocked: @escaping (Int) -> Void
+    ) {
         let size = max(pageSize, 1)
         var initial: Data = page.readable ? page.bytes : Data()
         if initial.count > size {
@@ -321,7 +393,10 @@ private struct PageEditorSheet: View {
         self.pageSize = size
         self.warning = warning
         self.password = password
+        self.isType5 = isType5
+        self.locked = locked
         self.onWritten = onWritten
+        self.onLocked = onLocked
         _bytes = State(initialValue: initial)
     }
 
@@ -329,7 +404,11 @@ private struct PageEditorSheet: View {
         NavigationStack {
             Form {
                 Section {
-                    LabeledContent("Page", value: "\(indexLabel) (\(page.index))")
+                    LabeledContent(isType5 ? "Block" : "Page", value: "\(indexLabel) (\(page.index))")
+                    if locked {
+                        Label("Locked. This block can no longer be written.", systemImage: "lock.fill")
+                            .foregroundStyle(.orange)
+                    }
                     if page.readable && !page.bytes.isEmpty {
                         LabeledContent("On tag") {
                             Text(page.bytes.hexString(separator: " "))
@@ -351,17 +430,35 @@ private struct PageEditorSheet: View {
                 }
 
                 Section {
-                    ScanButton("Write page") {
-                        write()
+                    ScanButton(isType5 ? "Write block" : "Write page") {
+                        // Pages with a caution hold lock, configuration or serial bytes, so a wrong write may not be undoable.
+                        if warning != nil {
+                            showingWriteConfirmation = true
+                        } else {
+                            write()
+                        }
                     }
-                    .disabled(bytes.count != pageSize)
+                    .disabled(bytes.count != pageSize || locked)
                 } footer: {
-                    Text("Hold your iPhone near the same tag to write this page.")
+                    Text(isType5 ? "Hold your iPhone near the same tag to write this block." : "Hold your iPhone near the same tag to write this page.")
                 }
                 .listRowBackground(Color.clear)
                 .listRowInsets(EdgeInsets())
+
+                if isType5 && !locked {
+                    Section {
+                        Button(role: .destructive) {
+                            showingLockConfirmation = true
+                        } label: {
+                            Label("Lock block", systemImage: "lock")
+                        }
+                        .disabled(app.nfc.isBusy)
+                    } footer: {
+                        Text("Locking makes the block read only forever. Write the bytes you want first.")
+                    }
+                }
             }
-            .navigationTitle("Edit page")
+            .navigationTitle(isType5 ? "Edit block" : "Edit page")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -369,6 +466,22 @@ private struct PageEditorSheet: View {
                         dismiss()
                     }
                 }
+            }
+            .confirmationDialog(isType5 ? "Write this block?" : "Write this page?", isPresented: $showingWriteConfirmation, titleVisibility: .visible) {
+                Button(isType5 ? "Write block" : "Write page", role: .destructive) {
+                    write()
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text(warning ?? "The new bytes replace the ones on the tag.")
+            }
+            .confirmationDialog("Lock block \(page.index) for good?", isPresented: $showingLockConfirmation, titleVisibility: .visible) {
+                Button("Lock block", role: .destructive) {
+                    lockBlock()
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("The block keeps its current bytes and can never be written again.")
             }
             .alertItem($alert)
         }
@@ -388,16 +501,38 @@ private struct PageEditorSheet: View {
         let index = page.index
         let data = bytes
         let key = password
+        let doneMessage = isType5 ? "Block written." : "Page written."
         Task { @MainActor in
             do {
                 try await app.nfc.run(
                     alertMessage: "Hold your iPhone near the tag.",
-                    successMessage: "Page written."
+                    successMessage: doneMessage
                 ) { session, tag in
                     try await TagOperations.writePage(session, tag, index: index, bytes: data, password: key)
                 }
                 Haptics.success()
                 onWritten(index, data)
+                dismiss()
+            } catch {
+                if NFCEditorError.map(error).isCancellation { return }
+                Haptics.error()
+                alert = AlertItem(error: error)
+            }
+        }
+    }
+
+    private func lockBlock() {
+        let index = page.index
+        Task { @MainActor in
+            do {
+                try await app.nfc.run(
+                    alertMessage: "Hold your iPhone near the tag.",
+                    successMessage: "Block locked."
+                ) { session, tag in
+                    try await TagOperations.type5LockBlocks(session, tag, blocks: [index])
+                }
+                Haptics.success()
+                onLocked(index)
                 dismiss()
             } catch {
                 if NFCEditorError.map(error).isCancellation { return }

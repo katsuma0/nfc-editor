@@ -144,6 +144,10 @@ enum ChipIdentifier {
                     )
                 }
             }
+            // The NTAG 213 TT uses subtype 0x03 and the same memory layout as a plain NTAG213.
+            if subtype == 0x03, storage == 0x0F {
+                return ttVariant(of: ntag213)
+            }
             let isFVariant = subtype == 0x04
             switch storage {
             case 0x0B:
@@ -476,6 +480,13 @@ enum ChipIdentifier {
         var copy = spec
         copy.name = spec.name + "F"
         copy.family = .ntag21xF
+        return copy
+    }
+
+    private static func ttVariant(of spec: ChipSpec) -> ChipSpec {
+        var copy = spec
+        copy.name = spec.name + "TT"
+        copy.notes = "Tamper detection wire. The tamper status appears in the tag details."
         return copy
     }
 

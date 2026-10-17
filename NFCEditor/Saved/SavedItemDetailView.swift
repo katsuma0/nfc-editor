@@ -229,6 +229,7 @@ struct SavedItemDetailView: View {
         } label: {
             Label("More", systemImage: "ellipsis.circle")
         }
+        .disabled(exportURL == nil && dumpURL == nil)
     }
 
     // MARK: Rows
@@ -327,7 +328,7 @@ struct SavedItemDetailView: View {
     private func modifyDrafts(_ change: (inout [RecordDraft]) -> Void) {
         guard var item = app.store.item(id: itemID) else { return }
         change(&item.drafts)
-        item.records = SavedItemDetailView.buildRecords(item.drafts)
+        item.rebuildProfileRecords()
         app.store.update(item)
     }
 
@@ -401,7 +402,7 @@ struct SavedItemDetailView: View {
         case .tag:
             return item.records
         case .profile:
-            return try item.drafts.map { try $0.build() }
+            return try item.drafts.flatMap { try RecordDraft.buildAll($0) }
         }
     }
 
@@ -418,11 +419,6 @@ struct SavedItemDetailView: View {
             parts.append("The tag is now locked.")
         }
         return parts.joined(separator: " ")
-    }
-
-    /// Builds every draft, or nothing at all when one of them is invalid.
-    private static func buildRecords(_ drafts: [RecordDraft]) -> [NDEFRecord] {
-        (try? drafts.map { try $0.build() }) ?? []
     }
 }
 

@@ -2,12 +2,13 @@ import Foundation
 import SwiftUI
 import CoreNFC
 
-/// Sets or removes the 4-byte password on NTAG and Ultralight EV1 tags.
+/// Sets or removes the 4-byte password on NTAG and Ultralight EV1 tags, and can lock the configuration for good.
 @MainActor
 struct PasswordToolView: View {
     private enum Mode: String, CaseIterable, Identifiable {
         case set = "Set"
         case remove = "Remove"
+        case lockConfig = "Lock config"
 
         var id: String { rawValue }
     }
@@ -21,7 +22,10 @@ struct PasswordToolView: View {
     @State private var authLimit = 0
     @State private var currentPassword = Data()
     @State private var passwordToRemove = Data()
+    @State private var lockConfigPassword = Data()
     @State private var showingConfirmation = false
+    @State private var showingLockConfigFirst = false
+    @State private var showingLockConfigFinal = false
     @State private var alert: AlertItem?
 
     var body: some View {
@@ -42,6 +46,8 @@ struct PasswordToolView: View {
                 setSections
             case .remove:
                 removeSections
+            case .lockConfig:
+                lockConfigSections
             }
         }
         .navigationTitle("Password")
@@ -53,6 +59,22 @@ struct PasswordToolView: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text(confirmationMessage)
+        }
+        .confirmationDialog("Lock the configuration for good?", isPresented: $showingLockConfigFirst, titleVisibility: .visible) {
+            Button("Continue", role: .destructive) {
+                askFinalLockConfig()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("The protected pages, the protection mode, the attempt limit and the counter and mirror settings of the tag you scan next can never be changed again.")
+        }
+        .alert("Are you sure?", isPresented: $showingLockConfigFinal) {
+            Button("Lock configuration", role: .destructive) {
+                lockConfiguration()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This is the last check. Locking the configuration cannot be undone by any app.")
         }
         .alertItem($alert)
     }
@@ -75,7 +97,8 @@ struct PasswordToolView: View {
 
         Section {
             Toggle("Also protect reads", isOn: $protectReads)
-            Stepper("Protect from page \(protectFromPage)", value: $protectFromPage, in: 4...255)
+            // Page 230 is the last page of the NTAG216, the largest chip with a password; a higher AUTH0 protects nothing.
+            Stepper("Protect from page \(protectFromPage)", value: $protectFromPage, in: 4...230)
             Picker("Wrong attempts allowed", selection: $authLimit) {
                 Text("Unlimited").tag(0)
                 ForEach(1...7, id: \.self) { limit in
@@ -147,6 +170,40 @@ struct PasswordToolView: View {
         .listRowInsets(EdgeInsets())
     }
 
+    // MARK: Lock config
+
+    @ViewBuilder
+    private var lockConfigSections: some View {
+        Section {
+            Label {
+                Text("Sets CFGLCK, which locks the configuration pages for good. The protected pages, read protection, attempt limit, counter and mirror settings stay exactly as they are now. The password and PACK can still be changed.")
+            } icon: {
+                Image(systemName: "exclamationmark.triangle.fill")
+            }
+            .foregroundStyle(.red)
+        } footer: {
+            Text("Set the password, counter and mirror the way you want them first. Lock the configuration last, when nobody should be able to switch the protection off.")
+        }
+
+        Section {
+            HexTextField("Current password", data: $lockConfigPassword, byteCount: 4)
+        } header: {
+            Text("Current password")
+        } footer: {
+            Text("Only needed when the configuration pages are password protected. Leave it empty otherwise.")
+        }
+
+        Section {
+            ScanButton("Lock configuration", systemImage: "lock.fill", role: .destructive) {
+                confirmLockConfiguration()
+            }
+        } footer: {
+            Text("You are asked twice before the scan starts.")
+        }
+        .listRowBackground(Color.clear)
+        .listRowInsets(EdgeInsets())
+    }
+
     // MARK: Actions
 
     private func generatePassword() {
@@ -201,6 +258,46 @@ struct PasswordToolView: View {
                 }
                 Haptics.success()
                 alert = AlertItem.success("The tag now asks for the password from page \(firstPage) on. Keep \(passwordHex) somewhere safe.")
+            } catch {
+                if NFCEditorError.map(error).isCancellation { return }
+                Haptics.error()
+                alert = AlertItem(error: error)
+            }
+        }
+    }
+
+    private func confirmLockConfiguration() {
+        guard lockConfigPassword.isEmpty || lockConfigPassword.count == 4 else {
+            alert = AlertItem(error: NFCEditorError.invalidInput("The current password must be 4 bytes. Leave it empty if the tag has none."))
+            return
+        }
+        showingLockConfigFirst = true
+    }
+
+    /// The first dialog is still animating away, so the final check waits a moment before it shows.
+    private func askFinalLockConfig() {
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(400))
+            showingLockConfigFinal = true
+        }
+    }
+
+    private func lockConfiguration() {
+        guard lockConfigPassword.isEmpty || lockConfigPassword.count == 4 else {
+            alert = AlertItem(error: NFCEditorError.invalidInput("The current password must be 4 bytes. Leave it empty if the tag has none."))
+            return
+        }
+        let key: Data? = lockConfigPassword.isEmpty ? nil : lockConfigPassword
+        Task { @MainActor in
+            do {
+                try await app.nfc.run(
+                    alertMessage: "Hold your iPhone near the tag.",
+                    successMessage: "Configuration locked."
+                ) { session, tag in
+                    try await TagOperations.lockConfiguration(session, tag, password: key)
+                }
+                Haptics.success()
+                alert = AlertItem.success("The configuration of this tag is now locked for good.")
             } catch {
                 if NFCEditorError.map(error).isCancellation { return }
                 Haptics.error()

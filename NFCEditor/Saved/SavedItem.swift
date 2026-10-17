@@ -26,7 +26,7 @@ struct SavedItem: Codable, Identifiable, Hashable {
             kind: .tag,
             createdAt: now,
             updatedAt: now,
-            drafts: info.records.map { RecordDraft.from(record: $0) },
+            drafts: RecordDraft.from(records: info.records),
             records: info.records,
             tagInfo: info
         )
@@ -59,8 +59,13 @@ struct SavedItem: Codable, Identifiable, Hashable {
         return parts.joined(separator: ", ")
     }
 
+    /// Counts what goes onto the tag, so a Bluetooth draft with handover on counts as two records.
     private var recordCount: Int {
-        kind == .profile ? drafts.count : records.count
+        if kind == .profile, records.isEmpty {
+            // An invalid draft still stands for the record the user means to write, so it counts as one.
+            return drafts.reduce(0) { $0 + ((try? RecordDraft.buildAll($1))?.count ?? 1) }
+        }
+        return records.count
     }
 
     private var byteCount: Int {
@@ -70,7 +75,7 @@ struct SavedItem: Codable, Identifiable, Hashable {
             return tagInfo?.ndefUsedBytes ?? NDEFMessageCodec.byteCount(records)
         case .profile:
             if drafts.isEmpty { return 0 }
-            if records.count == drafts.count {
+            if !records.isEmpty {
                 return NDEFMessageCodec.byteCount(records)
             }
             // An invalid draft leaves the profile without built records, so add up what each draft would take.
@@ -79,7 +84,13 @@ struct SavedItem: Codable, Identifiable, Hashable {
     }
 
     /// Builds every draft, or nothing at all when one of them is invalid.
-    private static func buildRecords(from drafts: [RecordDraft]) -> [NDEFRecord] {
-        (try? drafts.map { try $0.build() }) ?? []
+    static func buildRecords(from drafts: [RecordDraft]) -> [NDEFRecord] {
+        (try? drafts.flatMap { try RecordDraft.buildAll($0) }) ?? []
+    }
+
+    /// A profile's records always follow its drafts, so they are rebuilt whenever the profile is stored.
+    mutating func rebuildProfileRecords() {
+        guard kind == .profile else { return }
+        records = SavedItem.buildRecords(from: drafts)
     }
 }

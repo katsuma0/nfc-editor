@@ -62,6 +62,16 @@ const UI = (() => {
     sparkle: `<path ${S} d="M12 3l2 5 5 2-5 2-2 5-2-5-5-2 5-2z"/>`,
     calendar: `<rect ${S} x="4" y="5" width="16" height="15" rx="2"/><path ${S} d="M4 10h16M8 3v4M16 3v4"/>`,
     tag: `<path ${S} d="M3 12V4h8l10 10-8 8z"/><circle cx="7.5" cy="8.5" r="1.4" fill="currentColor"/>`,
+    creditcard: `<rect ${S} x="3" y="5.5" width="18" height="13" rx="2"/><path ${S} d="M3 10h18M7 15h4"/>`,
+    sliders: `<path ${S} d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle ${S} cx="15" cy="7" r="2"/><circle ${S} cx="9" cy="17" r="2"/>`,
+    seal: `<path ${S} d="M12 3l2.2 1.6 2.7-.1.8 2.6 2.2 1.6-.9 2.6.9 2.6-2.2 1.6-.8 2.6-2.7-.1L12 21l-2.2-1.6-2.7.1-.8-2.6-2.2-1.6.9-2.6-.9-2.6 2.2-1.6.8-2.6 2.7.1z"/><path ${S} d="M8.8 12.2l2.2 2.2 4.2-4.4"/>`,
+    sealx: `<path ${S} d="M12 3l2.2 1.6 2.7-.1.8 2.6 2.2 1.6-.9 2.6.9 2.6-2.2 1.6-.8 2.6-2.7-.1L12 21l-2.2-1.6-2.7.1-.8-2.6-2.2-1.6.9-2.6-.9-2.6 2.2-1.6.8-2.6 2.7.1z"/><path ${S} d="M9.5 9.5l5 5M14.5 9.5l-5 5"/>`,
+    lockstack: `<rect ${S} x="7" y="11" width="12" height="9" rx="2"/><path ${S} d="M10 11V8.5a3 3 0 0 1 6 0V11M4 8v10a2 2 0 0 0 2 2"/>`,
+    bell: `<path ${S} d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15zM10 20a2 2 0 0 0 4 0"/>`,
+    eye: `<path ${S} d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle ${S} cx="12" cy="12" r="3"/>`,
+    table: `<rect ${S} x="3" y="5" width="18" height="14" rx="2"/><path ${S} d="M3 10h18M3 14.5h18M9 10v9M15 10v9"/>`,
+    shield: `<path ${S} d="M12 3l8 3v6c0 4.5-3.4 8-8 9-4.6-1-8-4.5-8-9V6z"/><path ${S} d="M12.5 7.5L9.5 12.5h4l-1 4"/>`,
+    layers: `<path ${S} d="M12 3l9 5-9 5-9-5z"/><path ${S} d="M3 12.5l9 5 9-5M3 16.5l9 5 9-5"/>`,
     hand: `<path ${S} d="M7 12V6a1.5 1.5 0 0 1 3 0v5M10 10V4.5a1.5 1.5 0 0 1 3 0V11M13 6a1.5 1.5 0 0 1 3 0v6M16 9a1.5 1.5 0 0 1 3 0v5a6 6 0 0 1-6 6h-1.5a6 6 0 0 1-5.1-2.8L4 13a1.5 1.5 0 0 1 2.5-1.5L7 12"/>`,
   };
   const SVG_NS = 'http://www.w3.org/2000/svg';
@@ -187,7 +197,9 @@ const UI = (() => {
   const textBlock = (text, cls) => el('p', { class: 'plain-text' + (cls ? ' ' + cls : ''), text });
   function hexField(o) {
     let bytes = o.value || new Uint8Array();
-    const input = el('input', { type: 'text', class: 'mono', placeholder: o.placeholder || (o.byteCount ? Array(o.byteCount).fill('00').join(' ') : 'hex bytes'), inputmode: 'text', autocapitalize: 'characters', spellcheck: 'false', autocorrect: 'off' });
+    // Keys and blocks longer than 8 bytes do not fit one line at phone width, so they wrap in a two-line field.
+    const long = !o.byteCount || o.byteCount > 8;
+    const input = el(long ? 'textarea' : 'input', { type: long ? null : 'text', class: 'mono' + (long ? ' hex-area' : ''), rows: long ? 2 : null, placeholder: o.placeholder || (o.byteCount ? Array(o.byteCount).fill('00').join(' ') : 'hex bytes'), inputmode: 'text', autocapitalize: 'characters', spellcheck: 'false', autocorrect: 'off' });
     input.value = NDEF.hex(bytes, ' ');
     const caption = el('div', { class: 'caption' });
     let dirty = bytes.length > 0;
@@ -377,53 +389,76 @@ const UI = (() => {
     set selectedTagId(v) { STORE.settings.simulatedTag = v; STORE.saveSettings(); },
     onBusy(fn) { busyListeners.push(fn); },
     setBusy(v) { nfc.isBusy = v; document.querySelectorAll('button[data-scan="1"]').forEach((b) => { b.disabled = v; }); busyListeners.forEach((fn) => fn(v)); },
-    run(o) {
-      if (nfc.isBusy) return Promise.reject(SIM.E.failed('Another NFC operation is in progress.'));
-      nfc.setBusy(true);
-      return new Promise((resolve, reject) => {
-        let cancelled = false, presented = false, timer = null, handle;
-        const art = el('div', { class: 'art' }, el('div', { class: 'ring pulse' }), el('div', { class: 'ring', style: 'inset:18px;opacity:0.35' }), el('div', { class: 'phone' }, icon('phoneframe')), el('div', { class: 'mark' }));
-        const msg = el('div', { class: 'msg', text: o.alertMessage || 'Hold your iPhone near the tag.' });
-        const heading = el('h2', { text: 'Ready to Scan' });
-        const finish = (fn) => { nfc.setBusy(false); handle.close(); fn(); };
-        const cancel = () => { if (cancelled) return; cancelled = true; clearTimeout(timer); finish(() => reject(SIM.E.cancelled())); };
-        const chips = el('div', { class: 'chips' });
-        const present = async (id) => {
-          if (presented || cancelled) return;
-          presented = true; clearTimeout(timer);
-          nfc.selectedTagId = id;
-          chips.querySelectorAll('.chip').forEach((c) => c.classList.toggle('active', c.dataset.id === id));
-          art.classList.add('busy'); heading.textContent = 'Scanning';
-          const tag = SIM.get(id);
-          tag.sessionStart();
-          const session = { get alertMessage() { return msg.textContent; }, set alertMessage(v) { msg.textContent = v; }, delay: (ms) => new Promise((r) => setTimeout(r, ms)) };
-          try {
-            const value = await o.body(session, tag);
-            SIM.save();
-            if (cancelled) return;
-            art.classList.remove('busy'); art.classList.add('success'); art.querySelector('.mark').append(icon('check')); heading.textContent = 'Done'; msg.textContent = o.successMessage || 'Done.';
-            haptic('success');
-            setTimeout(() => finish(() => resolve(value)), 700);
-          } catch (e) {
-            SIM.save();
-            if (cancelled) return;
-            const m = SIM.NFCError.map(e);
-            art.classList.remove('busy'); art.classList.add('fail'); art.querySelector('.mark').append(icon('xmark')); heading.textContent = 'Scan failed'; msg.textContent = m.message;
-            haptic('error');
-            setTimeout(() => finish(() => reject(m)), 1300);
-          }
-        };
-        for (const t of SIM.list()) {
-          const chip = el('button', { type: 'button', class: 'chip' + (t.id === nfc.selectedTagId ? ' active' : ''), text: t.name, 'data-id': t.id, onClick: () => present(t.id) });
-          chips.append(chip);
-        }
-        const sim = el('div', { class: 'sim' }, el('div', { class: 'label' }, el('span', { text: 'Simulator: tap a tag to present it' }), el('span', { text: 'auto in 1.5 s' })), chips, el('div', { class: 'hint', text: 'A real iPhone shows this sheet from iOS and reads whatever tag you hold to it. The web preview presents one of these pretend tags instead.' }));
-        const card = el('div', { class: 'nfc-card' }, el('button', { class: 'close', type: 'button', 'aria-label': 'Close', onClick: cancel }, icon('xmark')), heading, msg, art, el('button', { class: 'cancel', type: 'button', text: 'Cancel', onClick: cancel }), sim);
-        handle = layer(card, cancel);
-        timer = setTimeout(() => present(nfc.selectedTagId), 1500);
-      });
-    },
+    run(o) { return openSession(o, false); },
+    // One sheet, many tags, like NFCSessionManager.runBatch: after each tag the sheet shows the running count
+    // and waits for the next one. Cancel (or the 60 second limit iOS puts on a session) resolves with the count;
+    // with no tag written yet it rejects as cancelled (or timed out). A failed tag shows its error and the sheet keeps going.
+    runBatch(o) { return openSession(o, true); },
   };
+  const writtenToTags = (n) => (n === 1 ? 'Written to 1 tag.' : `Written to ${n} tags.`);
+  function openSession(o, batch) {
+    if (nfc.isBusy) return Promise.reject(SIM.E.failed('Another NFC operation is in progress.'));
+    nfc.setBusy(true);
+    return new Promise((resolve, reject) => {
+      let ended = false, presented = false, working = false, count = 0, timer = null, limit = null, handle;
+      const mark = el('div', { class: 'mark' });
+      const art = el('div', { class: 'art' }, el('div', { class: 'ring pulse' }), el('div', { class: 'ring', style: 'inset:18px;opacity:0.35' }), el('div', { class: 'phone' }, icon('phoneframe')), mark);
+      const msg = el('div', { class: 'msg', text: o.alertMessage || 'Hold your iPhone near the tag.' });
+      const heading = el('h2', { text: 'Ready to Scan' });
+      const autoLabel = el('span', { text: 'auto in 1.5 s' });
+      const end = (fn) => { if (ended) return; ended = true; clearTimeout(timer); clearTimeout(limit); nfc.setBusy(false); handle.close(); fn(); };
+      const cancel = () => { if (batch && count > 0) end(() => resolve(count)); else end(() => reject(SIM.E.cancelled())); };
+      const chips = el('div', { class: 'chips' });
+      // Back to the waiting state between tags of a batch, keeping the last message on screen.
+      const ready = (text) => { if (ended) return; art.className = 'art'; mark.replaceChildren(); heading.textContent = 'Ready to Scan'; msg.textContent = text; working = false; };
+      const present = async (id) => {
+        if (ended || working || (presented && !batch)) return;
+        presented = true; working = true; clearTimeout(timer);
+        if (batch) autoLabel.textContent = count ? count + ' done' : '';
+        nfc.selectedTagId = id;
+        chips.querySelectorAll('.chip').forEach((c) => c.classList.toggle('active', c.dataset.id === id));
+        art.className = 'art busy'; mark.replaceChildren(); heading.textContent = 'Scanning';
+        const tag = SIM.get(id);
+        tag.sessionStart();
+        const session = { get alertMessage() { return msg.textContent; }, set alertMessage(v) { msg.textContent = v; }, delay: (ms) => new Promise((r) => setTimeout(r, ms)) };
+        try {
+          const value = await o.body(session, tag, count);
+          SIM.save();
+          if (ended) return;
+          art.className = 'art success'; mark.replaceChildren(icon('check')); heading.textContent = 'Done';
+          haptic('success');
+          if (batch) {
+            count++;
+            const text = typeof value === 'string' ? value : `${writtenToTags(count)} Hold the next one.`;
+            msg.textContent = text; autoLabel.textContent = count + ' done';
+            setTimeout(() => ready(text), 700);
+            return;
+          }
+          msg.textContent = o.successMessage || 'Done.';
+          setTimeout(() => end(() => resolve(value)), 700);
+        } catch (e) {
+          SIM.save();
+          if (ended) return;
+          const m = SIM.NFCError.map(e);
+          art.className = 'art fail'; mark.replaceChildren(icon('xmark')); heading.textContent = 'Scan failed'; msg.textContent = m.message;
+          haptic('error');
+          if (batch) { setTimeout(() => ready(m.message), 1300); return; }
+          setTimeout(() => end(() => reject(m)), 1300);
+        }
+      };
+      for (const t of SIM.list()) {
+        const chip = el('button', { type: 'button', class: 'chip' + (t.id === nfc.selectedTagId ? ' active' : ''), text: t.name, 'data-id': t.id, onClick: () => present(t.id) });
+        chips.append(chip);
+      }
+      const hint = batch ? 'A real iPhone keeps this sheet open and writes each tag you hold to it. The web preview writes one pretend tag per tap; tap Cancel when you are done.' : 'A real iPhone shows this sheet from iOS and reads whatever tag you hold to it. The web preview presents one of these pretend tags instead.';
+      const sim = el('div', { class: 'sim' }, el('div', { class: 'label' }, el('span', { text: batch ? 'Simulator: tap a tag for each write' : 'Simulator: tap a tag to present it' }), autoLabel), chips, el('div', { class: 'hint', text: hint }));
+      const card = el('div', { class: 'nfc-card' }, el('button', { class: 'close', type: 'button', 'aria-label': 'Close', onClick: cancel }, icon('xmark')), heading, msg, art, el('button', { class: 'cancel', type: 'button', text: 'Cancel', onClick: cancel }), sim);
+      handle = layer(card, cancel);
+      // Only the first tag is presented on its own; in a batch every later tag is a deliberate tap.
+      timer = setTimeout(() => present(nfc.selectedTagId), 1500);
+      if (batch) limit = setTimeout(() => { if (count > 0) end(() => resolve(count)); else end(() => reject(SIM.E.timeout())); }, 60000);
+    });
+  }
 
   return { icon, el, section, row, toggleRow, fieldRow, selectRow, stepperRow, buttonRow, bigButton, segmented, textBlock, hexField, emptyState, hexDump, dateLabel, bytesLabel,
     navButton, NavStack, sheet, alert, confirm, prompt, actionSheet, showError, success, haptic, copy, download, openURL, nfc };

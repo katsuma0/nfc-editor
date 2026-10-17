@@ -132,7 +132,7 @@ struct RecordEditorView: View {
         case .customURI: customURIForm
         case .customMIME: customMIMEForm
         case .external: externalForm
-        case .raw, .unknown: rawForm
+        case .raw, .handover, .unknown: rawForm
         case .empty: emptyForm
         case .smartPoster: smartPosterForm
         }
@@ -395,6 +395,11 @@ struct RecordEditorView: View {
         } footer: {
             Text("Find the address in the device's settings or on its label.")
         }
+        Section {
+            Toggle("Wrap in Handover Select (Android pairing)", isOn: flag(DraftKey.handover))
+        } footer: {
+            Text("Puts a Handover Select record in front of the pairing record, the NFC Forum pairing format that Android phones and many speakers and headsets look for. It adds a few bytes. iPhones ignore both records.")
+        }
     }
 
     // MARK: Social
@@ -515,11 +520,14 @@ struct RecordEditorView: View {
 
     // MARK: Raw
 
+    /// Unchanged is left out because it is only valid inside a chunked record; a single record with it is malformed.
+    private static let editableFormats = TypeNameFormat.allCases.filter { $0 != .unchanged }
+
     @ViewBuilder
     private var rawForm: some View {
         Section {
             Picker("Type name format", selection: tnfBinding) {
-                ForEach(TypeNameFormat.allCases, id: \.rawValue) { tnf in
+                ForEach(Self.editableFormats, id: \.rawValue) { tnf in
                     Text(tnf.label).tag(tnf)
                 }
             }
@@ -569,14 +577,18 @@ struct RecordEditorView: View {
 
     @ViewBuilder
     private var smartPosterForm: some View {
-        Section("URL") {
+        Section {
             TextField("https://example.com", text: field(DraftKey.url))
                 .keyboardType(.URL)
                 .textContentType(.URL)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
+        } header: {
+            Text("URL")
+        } footer: {
+            Text("https:// is added when you leave it out.")
         }
-        Section("Title") {
+        Section {
             TextField("Title (optional)", text: field(DraftKey.text))
             LabeledContent("Language") {
                 TextField("en", text: field(DraftKey.language))
@@ -585,6 +597,10 @@ struct RecordEditorView: View {
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
             }
+        } header: {
+            Text("Title")
+        } footer: {
+            Text("A smart poster wraps the URL with a title that some readers show before opening it. iPhones open the URL.")
         }
     }
 }
