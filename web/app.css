@@ -219,3 +219,7 @@ a { color: var(--blue); text-decoration: none; }
 .cell > .lock-mark { width: 18px; height: 18px; color: var(--orange); }
 .steps { margin: 0; padding-left: 22px; font-size: 15px; line-height: 1.4; }
 .steps li + li { margin-top: 6px; }
+.cell.plain .body > input { display: block; width: 100%; }
+.content > div:first-child > .segmented:first-child { margin-top: 12px; }
+.result-row.block16 { font-size: 11px; }
+.cell.plain .body > textarea.hex-area { display: block; width: 100%; min-height: 0; resize: none; line-height: 1.35; }

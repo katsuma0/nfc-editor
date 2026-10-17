@@ -14,6 +14,7 @@ struct WriteView: View {
     @State private var showingClearConfirmation = false
     @State private var showingLockConfirmation = false
     @State private var writeSeveral = false
+    @State private var editMode: EditMode = .inactive
 
     var body: some View {
         NavigationStack {
@@ -47,6 +48,13 @@ struct WriteView: View {
                     } label: {
                         Label("More", systemImage: "ellipsis.circle")
                     }
+                }
+            }
+            .environment(\.editMode, $editMode)
+            .onChange(of: app.writeQueue.drafts.isEmpty) { _, isEmpty in
+                // Deleting the last record would otherwise leave the list editing with its Done button disabled.
+                if isEmpty {
+                    editMode = .inactive
                 }
             }
             .sheet(item: $sheet, onDismiss: { openEditorForPendingKind() }) { item in

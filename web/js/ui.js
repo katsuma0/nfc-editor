@@ -65,6 +65,7 @@ const UI = (() => {
     creditcard: `<rect ${S} x="3" y="5.5" width="18" height="13" rx="2"/><path ${S} d="M3 10h18M7 15h4"/>`,
     sliders: `<path ${S} d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle ${S} cx="15" cy="7" r="2"/><circle ${S} cx="9" cy="17" r="2"/>`,
     seal: `<path ${S} d="M12 3l2.2 1.6 2.7-.1.8 2.6 2.2 1.6-.9 2.6.9 2.6-2.2 1.6-.8 2.6-2.7-.1L12 21l-2.2-1.6-2.7.1-.8-2.6-2.2-1.6.9-2.6-.9-2.6 2.2-1.6.8-2.6 2.7.1z"/><path ${S} d="M8.8 12.2l2.2 2.2 4.2-4.4"/>`,
+    sealx: `<path ${S} d="M12 3l2.2 1.6 2.7-.1.8 2.6 2.2 1.6-.9 2.6.9 2.6-2.2 1.6-.8 2.6-2.7-.1L12 21l-2.2-1.6-2.7.1-.8-2.6-2.2-1.6.9-2.6-.9-2.6 2.2-1.6.8-2.6 2.7.1z"/><path ${S} d="M9.5 9.5l5 5M14.5 9.5l-5 5"/>`,
     lockstack: `<rect ${S} x="7" y="11" width="12" height="9" rx="2"/><path ${S} d="M10 11V8.5a3 3 0 0 1 6 0V11M4 8v10a2 2 0 0 0 2 2"/>`,
     bell: `<path ${S} d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15zM10 20a2 2 0 0 0 4 0"/>`,
     eye: `<path ${S} d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle ${S} cx="12" cy="12" r="3"/>`,
@@ -196,7 +197,9 @@ const UI = (() => {
   const textBlock = (text, cls) => el('p', { class: 'plain-text' + (cls ? ' ' + cls : ''), text });
   function hexField(o) {
     let bytes = o.value || new Uint8Array();
-    const input = el('input', { type: 'text', class: 'mono', placeholder: o.placeholder || (o.byteCount ? Array(o.byteCount).fill('00').join(' ') : 'hex bytes'), inputmode: 'text', autocapitalize: 'characters', spellcheck: 'false', autocorrect: 'off' });
+    // Keys and blocks longer than 8 bytes do not fit one line at phone width, so they wrap in a two-line field.
+    const long = !o.byteCount || o.byteCount > 8;
+    const input = el(long ? 'textarea' : 'input', { type: long ? null : 'text', class: 'mono' + (long ? ' hex-area' : ''), rows: long ? 2 : null, placeholder: o.placeholder || (o.byteCount ? Array(o.byteCount).fill('00').join(' ') : 'hex bytes'), inputmode: 'text', autocapitalize: 'characters', spellcheck: 'false', autocorrect: 'off' });
     input.value = NDEF.hex(bytes, ' ');
     const caption = el('div', { class: 'caption' });
     let dirty = bytes.length > 0;

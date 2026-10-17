@@ -49,18 +49,16 @@ struct AboutView: View {
             }
 
             Section {
-                LabeledContent {
-                    Text("Opens the app, scans a tag and returns its records as text, one line per record.")
-                        .multilineTextAlignment(.trailing)
-                } label: {
-                    Label("Read NFC tag", systemImage: "wave.3.right")
-                }
-                LabeledContent {
-                    Text("Opens the app and writes a saved profile to the next tag you hold, then checks it.")
-                        .multilineTextAlignment(.trailing)
-                } label: {
-                    Label("Write profile to tag", systemImage: "square.and.pencil")
-                }
+                intentRow(
+                    "Read NFC tag",
+                    detail: "Opens the app, scans a tag and returns its records as text, one line per record.",
+                    systemImage: "wave.3.right"
+                )
+                intentRow(
+                    "Write profile to tag",
+                    detail: "Opens the app and writes a saved profile to the next tag you hold, then checks it.",
+                    systemImage: "square.and.pencil"
+                )
             } header: {
                 Text("Shortcuts actions")
             } footer: {
@@ -92,6 +90,20 @@ struct AboutView: View {
         .listStyle(.insetGrouped)
         .navigationTitle("About")
         .navigationBarTitleDisplayMode(.inline)
+    }
+
+    // The descriptions are full sentences, so they go under the title rather than squeezed into a trailing value column.
+    private func intentRow(_ title: String, detail: String, systemImage: String) -> some View {
+        Label {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                Text(detail)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+        } icon: {
+            Image(systemName: systemImage)
+        }
     }
 
     private var versionLine: String {

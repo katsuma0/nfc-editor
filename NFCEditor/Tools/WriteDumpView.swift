@@ -188,13 +188,13 @@ struct WriteDumpView: View {
                 Label("Preview pages", systemImage: "list.bullet.rectangle")
             }
             Toggle("Include pages 0 to 3 and config pages", isOn: $includeSystemPages)
-            if includeSystemPages {
+            if includeSystemPages && serialOptionAvailable {
                 Toggle("Also write serial number pages (magic chips only)", isOn: $includeSerialPages)
             }
         } header: {
             Text("Pages")
         } footer: {
-            if includeSerialPages {
+            if writesSerialPages {
                 Text("Pages 0 and 1 are written too, so the tag takes the serial number from the dump. Only magic clone chips accept this; a real NXP chip refuses pages 0 and 1 and the write stops there. Page 2 carries the second check byte of the serial number, so keep it in the range. Lock bits and configuration pages are written as well and can lock the tag for good.")
                     .foregroundStyle(.red)
             } else if includeSystemPages {
@@ -207,7 +207,7 @@ struct WriteDumpView: View {
     }
 
     private var confirmationMessage: String {
-        if includeSerialPages {
+        if writesSerialPages {
             return "The serial number, lock bytes, capability container and configuration pages will be written as they are in the dump. Only a magic clone chip accepts a new serial number. Wrong values cannot be undone."
         }
         return "The lock bytes, capability container and configuration pages will be written as they are in the dump. Wrong values cannot be undone. The serial number pages are skipped because the tag does not accept writes to them."
@@ -262,6 +262,19 @@ struct WriteDumpView: View {
             guard let data = importedData, !data.isEmpty else { return nil }
             return MemoryDump(flatBytes: data, pageSize: pageSize, chip: nil)
         }
+    }
+
+    /// Only a Type 2 dump keeps the serial number in pages 0 and 1; a Type 5 serial number is not in memory at all.
+    private var serialOptionAvailable: Bool {
+        guard let dump = currentDump, dump.pageSize == 4 else { return false }
+        if let forumType = dump.chip?.nfcForumType {
+            return forumType == 2
+        }
+        return true
+    }
+
+    private var writesSerialPages: Bool {
+        includeSystemPages && includeSerialPages && serialOptionAvailable
     }
 
     private var rangeKey: RangeKey {
@@ -356,7 +369,7 @@ struct WriteDumpView: View {
         let range = selectedRange
         let key: Data? = password.isEmpty ? nil : password
         let includeSystem = includeSystemPages
-        let includeSerial = includeSystemPages && includeSerialPages
+        let includeSerial = writesSerialPages
         Task { @MainActor in
             do {
                 let written = try await app.nfc.run(
@@ -380,23 +393,21 @@ struct WriteDumpView: View {
 
 private enum DumpWriter {
     /// Narrows the range to the user memory of the tag being held, or to every writable page when system pages were asked for.
-    /// Serial number pages are added by TagOperations.writeDump itself, so the range here always starts at page 2 or later.
+    /// With the serial number option on, TagOperations.writeDump adds pages 0 and 1 itself, so they may stay in the range.
     static func write(_ dump: MemoryDump, range: ClosedRange<Int>, includeSystemPages: Bool, includeSerialPages: Bool, password: Data?, session: NFCTagReaderSession, tag: NFCTag) async throws -> Int {
         let (spec, _) = try await TagOperations.identify(session, tag)
         let isType5 = spec.nfcForumType == 5
         let isType2 = !isType5 && spec.pageSize == 4
+        let serial = includeSystemPages && includeSerialPages && isType2
         var lower = range.lowerBound
         var upper = range.upperBound
         if includeSystemPages {
-            // Pages 0 and 1 hold the serial number and refuse every write, which would stop the whole dump at page 0.
-            if isType2 {
+            // On a real chip pages 0 and 1 refuse every write, which would stop the whole dump at page 0.
+            if isType2 && !serial {
                 lower = max(lower, 2)
-            }
-            guard lower <= upper else {
-                if includeSerialPages && isType2 {
-                    throw NFCEditorError.invalidInput("Select pages from 2 up. Pages 0 and 1 are added on their own when serial number pages are on.")
+                guard lower <= upper else {
+                    throw NFCEditorError.invalidInput("Pages 0 and 1 hold the serial number and cannot be written. Select pages from 2 up.")
                 }
-                throw NFCEditorError.invalidInput("Pages 0 and 1 hold the serial number and cannot be written. Select pages from 2 up.")
             }
         } else if let user = spec.userPageRange {
             // Block 0 of a Type 5 tag is its capability container, so it stays with the system pages.
@@ -413,7 +424,6 @@ private enum DumpWriter {
                 throw NFCEditorError.invalidInput("Pages below \(lower) are skipped. Select a page from \(lower) up, or turn on the system pages option.")
             }
         }
-        let serial = includeSystemPages && includeSerialPages && isType2
         return try await TagOperations.writeDump(session, tag, dump: dump, range: lower...upper, password: password, includeSerialPages: serial)
     }
 }

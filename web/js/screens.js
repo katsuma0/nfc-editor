@@ -34,9 +34,9 @@ const SCREENS = (() => {
   const colorValue = (node, color) => { const v = node && node.querySelector('.value'); if (v) v.style.color = color; return node; };
   // Originality signature verdicts, worded as in TagDetailView and SignatureToolView.
   const VERDICTS = {
-    genuine: { title: 'Genuine NXP chip', text: "The signature matches NXP's public key for this serial number.", color: 'var(--green)' },
-    notGenuine: { title: "Signature does not match NXP's key", text: "The signature does not match NXP's public key for this serial number. The chip is likely a clone.", color: 'var(--red)' },
-    noKey: { title: 'No public key for this chip', text: 'NXP has not published a public key for this chip, so the signature cannot be checked.', color: 'var(--secondary)' },
+    genuine: { title: 'Genuine NXP chip', text: "The signature matches NXP's public key for this serial number.", color: 'var(--green)', icon: 'seal' },
+    notGenuine: { title: "Signature does not match NXP's key", text: "The signature does not match NXP's public key for this serial number. The chip is likely a clone.", color: 'var(--red)', icon: 'sealx' },
+    noKey: { title: 'No public key for this chip', text: 'NXP has not published a public key for this chip, so the signature cannot be checked.', color: 'var(--secondary)', icon: 'question' },
   };
   // NTAG213 TT: byte 4 of READ_TT_STATUS is C for a closed loop, O for an open one and I when the chip cannot tell.
   function tamperInfo(hexText) {
@@ -93,7 +93,7 @@ const SCREENS = (() => {
           if (!info.signature) return null;
           const v = info.signatureVerdict && VERDICTS[info.signatureVerdict];
           if (!v) return r('Signature', info.signature.slice(0, 16) + '…', 'signature', { valueMono: true, onClick: copySignature });
-          return colorValue(r('Signature', v.title, 'seal', { subtitle: hexSpaced(info.signature.slice(0, 16)) + '…', subtitleMono: true, onClick: copySignature }), v.color);
+          return colorValue(r('Signature', v.title, v.icon, { subtitle: hexSpaced(info.signature.slice(0, 16)) + '…', subtitleMono: true, onClick: copySignature }), v.color);
         };
         const tamperRow = () => { if (!info.tamperStatus) return null; const t = tamperInfo(info.tamperStatus); return colorValue(r('Tamper', t.text, 'shield', { subtitle: info.tamperStatus, subtitleMono: true }), t.color); };
         // The mirror setting comes first, like TagDetailView; scans saved before the dedicated tamper row may still carry a tamper extra.
@@ -114,7 +114,8 @@ const SCREENS = (() => {
           info.counter != null ? r('Counter', String(info.counter) + (info.counterEnabled === false ? ' (disabled)' : ''), 'number') : (info.counterEnabled != null ? r('Counter', info.counterEnabled ? 'Enabled' : 'Disabled', 'number') : null),
           signatureRow(),
           tamperRow(),
-          ...orderedExtras.map((f) => r(f.label, f.value, f.icon || 'info', { valueMono: /^[0-9A-F ]+$/.test(f.value) })),
+          // Long hex values (GET_VERSION, for example) go under the title so they never run into it.
+          ...orderedExtras.map((f) => { const mono = /^[0-9A-F ]+$/.test(f.value); return mono && f.value.length > 14 ? row({ icon: f.icon || 'info', iconBg: '#636366', title: f.label, subtitle: f.value, subtitleMono: true, subtitleWrap: true, accessory: 'none' }) : r(f.label, f.value, f.icon || 'info', { valueMono: mono }); }),
         ];
         if (info.chip.notes) rows.push(r('Note', info.chip.notes, 'info'));
         wrap.append(section({ header: 'Tag', rows }));
@@ -658,7 +659,7 @@ const SCREENS = (() => {
         else {
           const v = VERDICTS[result.verdict];
           wrap.append(section({ header: 'Result', rows: [
-            row({ iconPlain: 'seal', iconColor: v.color, title: v.title, subtitle: v.text, subtitleWrap: true, accessory: 'none' }),
+            row({ iconPlain: v.icon, iconColor: v.color, title: v.title, subtitle: v.text, subtitleWrap: true, accessory: 'none' }),
             result.signature ? el('div', { class: 'cell plain' }, el('div', { class: 'result-row', text: hexSpaced(result.signature) })) : null,
             result.signature ? buttonRow({ icon: 'copy', title: 'Copy', onClick: async () => { await UI.copy(hexSpaced(result.signature)); UI.alert({ title: 'Copied', message: '32 bytes as hex.' }); } }) : null,
           ], footer: `Read at ${timeLabel(result.readAt)}. The check uses the serial number as well as the signature, and runs on your iPhone without a network connection. The web preview simulates the check.` }));
@@ -759,7 +760,7 @@ const SCREENS = (() => {
         const lockedCount = state.groups.filter((g) => g.locked).length;
         wrap.append(section({ header: 'Tag', rows: [
           row({ title: 'Chip', value: state.chip, valueWrap: true, accessory: 'none' }),
-          row({ title: 'Serial number', value: hexSpaced(state.uid).replace(/ /g, ':'), valueMono: true, accessory: 'none' }),
+          row({ title: 'Serial number', value: hexSpaced(state.uid).replace(/ /g, ':'), valueMono: true, valueWrap: true, accessory: 'none' }),
           row({ title: 'Locked groups', value: `${lockedCount} of ${state.groups.length}`, accessory: 'none' }),
         ], footer: `Read at ${timeLabel(state.readAt)}.` }));
         const rows = state.groups.map((g) => {
@@ -970,7 +971,7 @@ const SCREENS = (() => {
           row({ title: 'Chip', value: reading.chip, valueWrap: true, accessory: 'none' }),
           row({ title: 'DSFID', value: hex2(reading.dsfid), valueMono: true, accessory: 'none' }),
           row({ title: 'AFI', value: hex2(reading.afi), valueMono: true, accessory: 'none' }),
-          row({ title: 'Blocks', value: `${reading.totalBlocks} of ${reading.blockSize} bytes`, accessory: 'none' }),
+          row({ title: 'Memory', value: `${reading.totalBlocks} blocks of ${reading.blockSize} bytes`, accessory: 'none' }),
           row({ title: 'Locked blocks', value: locked ? String(locked) : 'None', subtitle: locked ? 'Locked: blocks ' + blockRanges(reading.lockedBlocks) : null, subtitleWrap: true, accessory: 'none' }),
         ], footer: `Read at ${timeLabel(reading.readAt)}.${family}` }));
       }
@@ -1061,7 +1062,7 @@ const SCREENS = (() => {
     }
     function buildST(ctx, wrap) {
       wrap.append(section({ header: 'Password', rows: [
-        stepperRow({ title: 'Password number', value: stNumber, min: 0, max: 3, format: (v) => (v === 0 ? '0, configuration' : `${v}, area ${v}`), onChange: (v) => { stNumber = v; } }),
+        stepperRow({ title: 'Password number', subtitle: '0 guards the configuration, 1 to 3 the memory areas.', value: stNumber, min: 0, max: 3, onChange: (v) => { stNumber = v; } }),
         hexField({ label: 'Current password', value: stCurrent, byteCount: 8, onChange: (b) => { stCurrent = b; } }),
         hexField({ label: 'New password', value: stNew, byteCount: 8, onChange: (b) => { stNew = b; } }),
       ], footer: "ST25TV passwords are 8 bytes. New chips use 8 zero bytes. Check the chip's datasheet for what each password guards." }));
@@ -1119,7 +1120,7 @@ const SCREENS = (() => {
           try { const data = await UI.nfc.run({ alertMessage: HOLD_CARD, successMessage: 'Blocks read.', body: (s, t) => SIM.ops.feliCaRead(s, t, c, blocks) }); result = { code: c, rows: blocks.map((b, i) => ({ block: b, bytes: data[i] })), readAt: new Date() }; ctx.refresh(); } catch (e) { fail(e); }
         } }, 'iPhone only finds FeliCa cards whose system code this app declares: 12FC (NDEF), FE00, 0003 and 8008. Services that need encryption cannot be read.'));
         if (result) {
-          wrap.append(section({ header: `Service ${hex4(result.code)}`, rows: result.rows.map((r) => row({ title: `Block ${r.block}`, custom: el('div', { class: 'result-row', text: NDEF.hex(r.bytes, ' ') + '\n' + NDEF.ascii(r.bytes) }), accessory: 'none', onClick: () => { writeBlock = r.block; writeData = new Uint8Array(r.bytes); ctx.refresh(); } })), footer: `Read at ${timeLabel(result.readAt)}. Tap a block to load it into the write section below.` }));
+          wrap.append(section({ header: `Service ${hex4(result.code)}`, rows: result.rows.map((r) => row({ title: `Block ${r.block}`, custom: el('div', { class: 'result-row block16', text: NDEF.hex(r.bytes, ' ') + '\n' + NDEF.ascii(r.bytes) }), accessory: 'none', onClick: () => { writeBlock = r.block; writeData = new Uint8Array(r.bytes); ctx.refresh(); } })), footer: `Read at ${timeLabel(result.readAt)}. Tap a block to load it into the write section below.` }));
         }
         wrap.append(section({ header: 'Write a block', rows: [
           stepperRow({ title: 'Block', value: writeBlock, min: 0, max: 255, onChange: (v) => { writeBlock = v; } }),

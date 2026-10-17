@@ -61,7 +61,9 @@ struct TagDetailView: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("The tag details, records and memory dump are kept in the Saved tab.")
+            Text(info.dump == nil
+                 ? "The tag details and records are kept in the Saved tab."
+                 : "The tag details, records and memory dump are kept in the Saved tab.")
         }
         .alertItem($alert)
     }

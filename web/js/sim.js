@@ -787,11 +787,13 @@ const SIM = (() => {
       if (tag.kind === 'type2') {
         session.alertMessage = 'Identifying the tag.'; await session.delay(250);
         if (tag.pages[3][0] !== 0xE1) throw E.notNDEFFormatted();
+        if (tag.ndefStatus() === 'readOnly') throw E.readOnly();
         session.alertMessage = 'Setting the read only flag.'; await session.delay(300);
         tag.command(U8(0xA2, 3, 0, 0, 0, 0x0F));
         return;
       }
       if (tag.kind === 'type5') {
+        if (tag.ndefStatus() === 'readOnly') throw E.readOnly();
         session.alertMessage = 'Setting the read only flag.'; await session.delay(300);
         const b0 = tag.readBlock(0); tag.writeBlock(0, U8(b0[0], (b0[1] & 0xF0) | 0x0F, b0[2], b0[3]));
         return;

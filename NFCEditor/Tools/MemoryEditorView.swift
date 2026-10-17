@@ -96,7 +96,7 @@ struct MemoryEditorView: View {
     private func summarySection(_ dump: MemoryDump) -> some View {
         Section {
             LabeledContent("Chip", value: dump.chip?.name ?? "Unknown")
-            LabeledContent("Pages", value: pagesLabel(dump))
+            LabeledContent(isType5 ? "Blocks" : "Pages", value: pagesLabel(dump))
             LabeledContent("Bytes", value: ByteFormatter.bytes(dump.readableByteCount))
             if isType5 && lockStateKnown {
                 LabeledContent("Locked blocks", value: "\(lockedBlocks.count)")
@@ -124,7 +124,7 @@ struct MemoryEditorView: View {
                 }
             }
         } header: {
-            Text("Pages")
+            Text(isType5 ? "Blocks" : "Pages")
         } footer: {
             Text(pagesFooter(dump))
         }
@@ -321,7 +321,7 @@ private struct PageRow: View {
             .lineLimit(1)
             .minimumScaleFactor(0.6)
             if !page.readable {
-                Text("Not readable. The page may need a password or does not exist.")
+                Text("Not readable. It may need a password or may not exist.")
                     .font(.caption)
                     .foregroundStyle(.red)
             } else if let warning {
@@ -487,11 +487,12 @@ private struct PageEditorSheet: View {
         let index = page.index
         let data = bytes
         let key = password
+        let doneMessage = isType5 ? "Block written." : "Page written."
         Task { @MainActor in
             do {
                 try await app.nfc.run(
                     alertMessage: "Hold your iPhone near the tag.",
-                    successMessage: "Page written."
+                    successMessage: doneMessage
                 ) { session, tag in
                     try await TagOperations.writePage(session, tag, index: index, bytes: data, password: key)
                 }

@@ -398,7 +398,7 @@ struct RecordEditorView: View {
         Section {
             Toggle("Wrap in Handover Select (Android pairing)", isOn: flag(DraftKey.handover))
         } footer: {
-            Text("Android phones offer to pair only when the pairing record comes with a Handover Select record. It adds a few bytes. iPhones ignore both records.")
+            Text("Puts a Handover Select record in front of the pairing record, the NFC Forum pairing format that Android phones and many speakers and headsets look for. It adds a few bytes. iPhones ignore both records.")
         }
     }
 
@@ -520,11 +520,14 @@ struct RecordEditorView: View {
 
     // MARK: Raw
 
+    /// Unchanged is left out because it is only valid inside a chunked record; a single record with it is malformed.
+    private static let editableFormats = TypeNameFormat.allCases.filter { $0 != .unchanged }
+
     @ViewBuilder
     private var rawForm: some View {
         Section {
             Picker("Type name format", selection: tnfBinding) {
-                ForEach(TypeNameFormat.allCases, id: \.rawValue) { tnf in
+                ForEach(Self.editableFormats, id: \.rawValue) { tnf in
                     Text(tnf.label).tag(tnf)
                 }
             }
