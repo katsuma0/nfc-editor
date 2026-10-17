@@ -310,24 +310,61 @@ private final class FakeISO15693Tag: NFCISO15693Tag, @unchecked Sendable {
         }
     }
 
-    func extendedReadSingleBlock(requestFlags: NFCISO15693RequestFlag, blockNumber: Int) async throws -> Data {
+    func extendedReadSingleBlock(requestFlags: NFCISO15693RequestFlag, blockNumber: Int, completionHandler: @escaping (Data, (any Error)?) -> Void) {
+        bridge({ try await self.async_extendedReadSingleBlock(requestFlags: requestFlags, blockNumber: blockNumber) }, empty: Data(), completionHandler)
+    }
+    func extendedReadMultipleBlocks(requestFlags: NFCISO15693RequestFlag, blockRange: NSRange, completionHandler: @escaping ([Data], (any Error)?) -> Void) {
+        bridge({ try await self.async_extendedReadMultipleBlocks(requestFlags: requestFlags, blockRange: blockRange) }, empty: [], completionHandler)
+    }
+    func extendedWriteSingleBlock(requestFlags: NFCISO15693RequestFlag, blockNumber: Int, dataBlock: Data, completionHandler: @escaping ((any Error)?) -> Void) {
+        bridgeVoid({ try await self.async_extendedWriteSingleBlock(requestFlags: requestFlags, blockNumber: blockNumber, dataBlock: dataBlock) }, completionHandler)
+    }
+    func extendedLockBlock(requestFlags: NFCISO15693RequestFlag, blockNumber: Int, completionHandler: @escaping ((any Error)?) -> Void) {
+        bridgeVoid({ try await self.async_extendedLockBlock(requestFlags: requestFlags, blockNumber: blockNumber) }, completionHandler)
+    }
+    func getMultipleBlockSecurityStatus(requestFlags: NFCISO15693RequestFlag, blockRange: NSRange, completionHandler: @escaping ([NSNumber], (any Error)?) -> Void) {
+        bridge({ try await self.async_getMultipleBlockSecurityStatus(requestFlags: requestFlags, blockRange: blockRange) }, empty: [], completionHandler)
+    }
+    func extendedGetMultipleBlockSecurityStatus(requestFlags: NFCISO15693RequestFlag, blockRange: NSRange, completionHandler: @escaping ([NSNumber], (any Error)?) -> Void) {
+        bridge({ try await self.async_extendedGetMultipleBlockSecurityStatus(requestFlags: requestFlags, blockRange: blockRange) }, empty: [], completionHandler)
+    }
+    func writeAFI(requestFlags: NFCISO15693RequestFlag, afi: UInt8, completionHandler: @escaping ((any Error)?) -> Void) {
+        bridgeVoid({ try await self.async_writeAFI(requestFlags: requestFlags, afi: afi) }, completionHandler)
+    }
+    func lockAFI(requestFlags: NFCISO15693RequestFlag, completionHandler: @escaping ((any Error)?) -> Void) {
+        bridgeVoid({ try await self.async_lockAFI(requestFlags: requestFlags) }, completionHandler)
+    }
+    func writeDSFID(requestFlags: NFCISO15693RequestFlag, dsfid: UInt8, completionHandler: @escaping ((any Error)?) -> Void) {
+        bridgeVoid({ try await self.async_writeDSFID(requestFlags: requestFlags, dsfid: dsfid) }, completionHandler)
+    }
+    func lockDFSID(requestFlags: NFCISO15693RequestFlag, completionHandler: @escaping ((any Error)?) -> Void) {
+        bridgeVoid({ try await self.async_lockDFSID(requestFlags: requestFlags) }, completionHandler)
+    }
+    private func bridge<T>(_ body: @escaping () async throws -> T, empty: T, _ done: @escaping (T, (any Error)?) -> Void) {
+        Task { do { done(try await body(), nil) } catch { done(empty, error) } }
+    }
+    private func bridgeVoid(_ body: @escaping () async throws -> Void, _ done: @escaping ((any Error)?) -> Void) {
+        Task { do { try await body(); done(nil) } catch { done(error) } }
+    }
+
+    func async_extendedReadSingleBlock(requestFlags: NFCISO15693RequestFlag, blockNumber: Int) async throws -> Data {
         log.append("extendedRead \(blockNumber)")
         return memory[blockNumber]
     }
 
-    func extendedReadMultipleBlocks(requestFlags: NFCISO15693RequestFlag, blockRange: NSRange) async throws -> [Data] {
+    func async_extendedReadMultipleBlocks(requestFlags: NFCISO15693RequestFlag, blockRange: NSRange) async throws -> [Data] {
         log.append("extendedReadMultiple \(blockRange.location)+\(blockRange.length)")
         if multipleFails { throw refused() }
         return (blockRange.location..<blockRange.location + blockRange.length).map { memory[$0] }
     }
 
-    func extendedWriteSingleBlock(requestFlags: NFCISO15693RequestFlag, blockNumber: Int, dataBlock: Data) async throws {
+    func async_extendedWriteSingleBlock(requestFlags: NFCISO15693RequestFlag, blockNumber: Int, dataBlock: Data) async throws {
         log.append("extendedWrite \(blockNumber) flags \(flagText(requestFlags)) \(dataBlock.hexString())")
         try checkOption(requestFlags)
         memory[blockNumber] = dataBlock
     }
 
-    func extendedLockBlock(requestFlags: NFCISO15693RequestFlag, blockNumber: Int) async throws {
+    func async_extendedLockBlock(requestFlags: NFCISO15693RequestFlag, blockNumber: Int) async throws {
         log.append("extendedLock \(blockNumber) flags \(flagText(requestFlags))")
         try checkOption(requestFlags)
         locked.insert(blockNumber)
@@ -338,35 +375,35 @@ private final class FakeISO15693Tag: NFCISO15693Tag, @unchecked Sendable {
         return (range.location..<range.location + range.length).map { NSNumber(value: locked.contains($0) ? 1 : 0) }
     }
 
-    func getMultipleBlockSecurityStatus(requestFlags: NFCISO15693RequestFlag, blockRange: NSRange) async throws -> [NSNumber] {
+    func async_getMultipleBlockSecurityStatus(requestFlags: NFCISO15693RequestFlag, blockRange: NSRange) async throws -> [NSNumber] {
         log.append("status \(blockRange.location)+\(blockRange.length)")
         return try statuses(blockRange)
     }
 
-    func extendedGetMultipleBlockSecurityStatus(requestFlags: NFCISO15693RequestFlag, blockRange: NSRange) async throws -> [NSNumber] {
+    func async_extendedGetMultipleBlockSecurityStatus(requestFlags: NFCISO15693RequestFlag, blockRange: NSRange) async throws -> [NSNumber] {
         log.append("extendedStatus \(blockRange.location)+\(blockRange.length)")
         return try statuses(blockRange)
     }
 
-    func writeAFI(requestFlags: NFCISO15693RequestFlag, afi: UInt8) async throws {
+    func async_writeAFI(requestFlags: NFCISO15693RequestFlag, afi: UInt8) async throws {
         log.append("writeAFI \(afi.hex) flags \(flagText(requestFlags))")
         try checkOption(requestFlags)
         self.afi = afi
     }
 
-    func lockAFI(requestFlags: NFCISO15693RequestFlag) async throws {
+    func async_lockAFI(requestFlags: NFCISO15693RequestFlag) async throws {
         log.append("lockAFI flags \(flagText(requestFlags))")
         try checkOption(requestFlags)
         afiLocked = true
     }
 
-    func writeDSFID(requestFlags: NFCISO15693RequestFlag, dsfid: UInt8) async throws {
+    func async_writeDSFID(requestFlags: NFCISO15693RequestFlag, dsfid: UInt8) async throws {
         log.append("writeDSFID \(dsfid.hex) flags \(flagText(requestFlags))")
         try checkOption(requestFlags)
         self.dsfid = dsfid
     }
 
-    func lockDFSID(requestFlags: NFCISO15693RequestFlag) async throws {
+    func async_lockDFSID(requestFlags: NFCISO15693RequestFlag) async throws {
         log.append("lockDSFID flags \(flagText(requestFlags))")
         try checkOption(requestFlags)
         dsfidLocked = true
