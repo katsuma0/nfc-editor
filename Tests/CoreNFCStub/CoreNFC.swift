@@ -140,16 +140,16 @@ public protocol NFCISO15693Tag: NFCNDEFTag {
     func writeSingleBlock(requestFlags: NFCISO15693RequestFlag, blockNumber: UInt8, dataBlock: Data) async throws
     func lockBlock(requestFlags: NFCISO15693RequestFlag, blockNumber: UInt8) async throws
     func customCommand(requestFlags: NFCISO15693RequestFlag, customCommandCode: Int, customRequestParameters: Data) async throws -> Data
-    func extendedReadSingleBlock(requestFlags: NFCISO15693RequestFlag, blockNumber: Int) async throws -> Data
-    func extendedReadMultipleBlocks(requestFlags: NFCISO15693RequestFlag, blockRange: NSRange) async throws -> [Data]
-    func extendedWriteSingleBlock(requestFlags: NFCISO15693RequestFlag, blockNumber: Int, dataBlock: Data) async throws
-    func extendedLockBlock(requestFlags: NFCISO15693RequestFlag, blockNumber: Int) async throws
-    func getMultipleBlockSecurityStatus(requestFlags: NFCISO15693RequestFlag, blockRange: NSRange) async throws -> [NSNumber]
-    func extendedGetMultipleBlockSecurityStatus(requestFlags: NFCISO15693RequestFlag, blockRange: NSRange) async throws -> [NSNumber]
-    func writeAFI(requestFlags: NFCISO15693RequestFlag, afi: UInt8) async throws
-    func lockAFI(requestFlags: NFCISO15693RequestFlag) async throws
-    func writeDSFID(requestFlags: NFCISO15693RequestFlag, dsfid: UInt8) async throws
-    func lockDFSID(requestFlags: NFCISO15693RequestFlag) async throws
+    func extendedReadSingleBlock(requestFlags: NFCISO15693RequestFlag, blockNumber: Int, completionHandler: @escaping (Data, (any Error)?) -> Void)
+    func extendedReadMultipleBlocks(requestFlags: NFCISO15693RequestFlag, blockRange: NSRange, completionHandler: @escaping ([Data], (any Error)?) -> Void)
+    func extendedWriteSingleBlock(requestFlags: NFCISO15693RequestFlag, blockNumber: Int, dataBlock: Data, completionHandler: @escaping ((any Error)?) -> Void)
+    func extendedLockBlock(requestFlags: NFCISO15693RequestFlag, blockNumber: Int, completionHandler: @escaping ((any Error)?) -> Void)
+    func getMultipleBlockSecurityStatus(requestFlags: NFCISO15693RequestFlag, blockRange: NSRange, completionHandler: @escaping ([NSNumber], (any Error)?) -> Void)
+    func extendedGetMultipleBlockSecurityStatus(requestFlags: NFCISO15693RequestFlag, blockRange: NSRange, completionHandler: @escaping ([NSNumber], (any Error)?) -> Void)
+    func writeAFI(requestFlags: NFCISO15693RequestFlag, afi: UInt8, completionHandler: @escaping ((any Error)?) -> Void)
+    func lockAFI(requestFlags: NFCISO15693RequestFlag, completionHandler: @escaping ((any Error)?) -> Void)
+    func writeDSFID(requestFlags: NFCISO15693RequestFlag, dsfid: UInt8, completionHandler: @escaping ((any Error)?) -> Void)
+    func lockDFSID(requestFlags: NFCISO15693RequestFlag, completionHandler: @escaping ((any Error)?) -> Void)
     func stayQuiet() async throws
     func select(requestFlags: NFCISO15693RequestFlag) async throws
     func resetToReady(requestFlags: NFCISO15693RequestFlag) async throws
