@@ -134,8 +134,7 @@ public protocol NFCISO15693Tag: NFCNDEFTag {
     var identifier: Data { get }
     var icManufacturerCode: Int { get }
     var icSerialNumber: Data { get }
-    func getSystemInfo(requestFlags: NFCISO15693RequestFlag) async throws -> (Int, Int, Int, Int, Int)
-    func getSystemInfoAndUID(requestFlags: NFCISO15693RequestFlag) async throws -> (Data?, Int, Int, Int, Int, Int)
+    func getSystemInfo(requestFlags: NFCISO15693RequestFlag, completionHandler: @escaping (Int, Int, Int, Int, Int, (any Error)?) -> Void)
     func readSingleBlock(requestFlags: NFCISO15693RequestFlag, blockNumber: UInt8) async throws -> Data
     func readMultipleBlocks(requestFlags: NFCISO15693RequestFlag, blockRange: NSRange) async throws -> [Data]
     func writeSingleBlock(requestFlags: NFCISO15693RequestFlag, blockNumber: UInt8, dataBlock: Data) async throws
