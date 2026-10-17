@@ -103,6 +103,7 @@ struct AddRecordView: View {
         case .raw: return "Type name format, type, ID and payload as hex."
         case .empty: return "An empty record that clears the tag."
         case .smartPoster: return "A URL with a title."
+        case .handover: return "Bluetooth pairing for Android phones."
         case .unknown: return "A record of unknown type."
         }
     }
