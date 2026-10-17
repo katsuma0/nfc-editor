@@ -29,6 +29,7 @@ struct WriteDumpView: View {
     @State private var fromPage = 4
     @State private var toPage = 4
     @State private var includeSystemPages = false
+    @State private var includeSerialPages = false
     @State private var password = Data()
     @State private var showingImporter = false
     @State private var showingConfirmation = false
@@ -58,10 +59,14 @@ struct WriteDumpView: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("The lock bytes, capability container and configuration pages will be written as they are in the dump. Wrong values cannot be undone. The serial number pages are skipped because the tag does not accept writes to them.")
+            Text(confirmationMessage)
         }
         .onChange(of: rangeKey, initial: true) { _, _ in
             resetRange()
+        }
+        .onChange(of: includeSystemPages) { _, newValue in
+            // Serial pages only make sense together with the system pages, so they switch off together.
+            if !newValue { includeSerialPages = false }
         }
         .onChange(of: fromPage) { _, newValue in
             if toPage < newValue { toPage = newValue }
@@ -183,16 +188,29 @@ struct WriteDumpView: View {
                 Label("Preview pages", systemImage: "list.bullet.rectangle")
             }
             Toggle("Include pages 0 to 3 and config pages", isOn: $includeSystemPages)
+            if includeSystemPages {
+                Toggle("Also write serial number pages (magic chips only)", isOn: $includeSerialPages)
+            }
         } header: {
             Text("Pages")
         } footer: {
-            if includeSystemPages {
-                Text("Pages 0 to 3 hold the serial number, lock bits and capability container, and the last pages hold the configuration and password. Writing them can lock the tag for good or make it unreadable. Only turn this on when you know exactly what the bytes do.")
+            if includeSerialPages {
+                Text("Pages 0 and 1 are written too, so the tag takes the serial number from the dump. Only magic clone chips accept this; a real NXP chip refuses pages 0 and 1 and the write stops there. Page 2 carries the second check byte of the serial number, so keep it in the range. Lock bits and configuration pages are written as well and can lock the tag for good.")
+                    .foregroundStyle(.red)
+            } else if includeSystemPages {
+                Text("Pages 0 to 3 hold the serial number, lock bits and capability container, and the last pages hold the configuration and password. Writing them can lock the tag for good or make it unreadable. Only turn this on when you know exactly what the bytes do. The serial number pages 0 and 1 are skipped.")
                     .foregroundStyle(.red)
             } else {
                 Text("Only pages inside the user memory of the tag you hold are written. The serial number, lock bits, capability container and configuration pages are skipped even if they are selected.")
             }
         }
+    }
+
+    private var confirmationMessage: String {
+        if includeSerialPages {
+            return "The serial number, lock bytes, capability container and configuration pages will be written as they are in the dump. Only a magic clone chip accepts a new serial number. Wrong values cannot be undone."
+        }
+        return "The lock bytes, capability container and configuration pages will be written as they are in the dump. Wrong values cannot be undone. The serial number pages are skipped because the tag does not accept writes to them."
     }
 
     private var passwordSection: some View {
@@ -338,13 +356,14 @@ struct WriteDumpView: View {
         let range = selectedRange
         let key: Data? = password.isEmpty ? nil : password
         let includeSystem = includeSystemPages
+        let includeSerial = includeSystemPages && includeSerialPages
         Task { @MainActor in
             do {
                 let written = try await app.nfc.run(
                     alertMessage: "Hold your iPhone near the tag.",
                     successMessage: "Dump written."
                 ) { session, tag in
-                    try await DumpWriter.write(dump, range: range, includeSystemPages: includeSystem, password: key, session: session, tag: tag)
+                    try await DumpWriter.write(dump, range: range, includeSystemPages: includeSystem, includeSerialPages: includeSerial, password: key, session: session, tag: tag)
                 }
                 Haptics.success()
                 alert = AlertItem.success("Wrote \(pageWord(written)).")
@@ -361,7 +380,8 @@ struct WriteDumpView: View {
 
 private enum DumpWriter {
     /// Narrows the range to the user memory of the tag being held, or to every writable page when system pages were asked for.
-    static func write(_ dump: MemoryDump, range: ClosedRange<Int>, includeSystemPages: Bool, password: Data?, session: NFCTagReaderSession, tag: NFCTag) async throws -> Int {
+    /// Serial number pages are added by TagOperations.writeDump itself, so the range here always starts at page 2 or later.
+    static func write(_ dump: MemoryDump, range: ClosedRange<Int>, includeSystemPages: Bool, includeSerialPages: Bool, password: Data?, session: NFCTagReaderSession, tag: NFCTag) async throws -> Int {
         let (spec, _) = try await TagOperations.identify(session, tag)
         let isType5 = spec.nfcForumType == 5
         let isType2 = !isType5 && spec.pageSize == 4
@@ -373,6 +393,9 @@ private enum DumpWriter {
                 lower = max(lower, 2)
             }
             guard lower <= upper else {
+                if includeSerialPages && isType2 {
+                    throw NFCEditorError.invalidInput("Select pages from 2 up. Pages 0 and 1 are added on their own when serial number pages are on.")
+                }
                 throw NFCEditorError.invalidInput("Pages 0 and 1 hold the serial number and cannot be written. Select pages from 2 up.")
             }
         } else if let user = spec.userPageRange {
@@ -390,7 +413,8 @@ private enum DumpWriter {
                 throw NFCEditorError.invalidInput("Pages below \(lower) are skipped. Select a page from \(lower) up, or turn on the system pages option.")
             }
         }
-        return try await TagOperations.writeDump(session, tag, dump: dump, range: lower...upper, password: password)
+        let serial = includeSystemPages && includeSerialPages && isType2
+        return try await TagOperations.writeDump(session, tag, dump: dump, range: lower...upper, password: password, includeSerialPages: serial)
     }
 }
 

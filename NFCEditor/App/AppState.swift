@@ -7,6 +7,10 @@ enum AppTab: String, Hashable {
 
 @MainActor @Observable
 final class AppState {
+    /// The one instance the app and the App Intents share, so a Shortcut run shows up in the Read tab
+    /// and writes the same saved profiles the user sees.
+    static let shared = AppState()
+
     let nfc = NFCSessionManager.shared
     let settings = AppSettings()
     let store = SavedStore()
@@ -42,5 +46,27 @@ final class AppState {
         if scanHistory.count > AppState.historyLimit {
             scanHistory.removeLast(scanHistory.count - AppState.historyLimit)
         }
+    }
+
+    /// The scan log as CSV, newest first: serial number, chip, record count and scan time (ISO 8601).
+    /// Lines end in CRLF as RFC 4180 asks, which spreadsheet apps on every platform accept.
+    func exportScanLogCSV() -> String {
+        var lines = ["Serial,Chip,Records,Scanned at"]
+        for info in scanHistory {
+            let fields = [
+                info.serialLine,
+                info.chipLine,
+                String(info.records.count),
+                info.scannedAt.ISO8601Format(),
+            ]
+            lines.append(fields.map(AppState.csvField).joined(separator: ","))
+        }
+        return lines.joined(separator: "\r\n") + "\r\n"
+    }
+
+    nonisolated private static func csvField(_ value: String) -> String {
+        let needsQuotes = value.contains(",") || value.contains("\"") || value.contains("\n") || value.contains("\r")
+        guard needsQuotes else { return value }
+        return "\"" + value.replacingOccurrences(of: "\"", with: "\"\"") + "\""
     }
 }

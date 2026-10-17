@@ -8,6 +8,7 @@ struct ReadView: View {
     @State private var path = NavigationPath()
     @State private var alert: AlertItem?
     @State private var showingSettings = false
+    @State private var scanLogURL: URL?
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -22,6 +23,22 @@ struct ReadView: View {
                 TagDetailView(info: info)
             }
             .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Menu {
+                        if let scanLogURL, !app.scanHistory.isEmpty {
+                            ShareLink(item: scanLogURL) {
+                                Label("Export scan log", systemImage: "tablecells")
+                            }
+                        } else {
+                            Button {} label: {
+                                Label("Export scan log", systemImage: "tablecells")
+                            }
+                            .disabled(true)
+                        }
+                    } label: {
+                        Label("More", systemImage: "ellipsis.circle")
+                    }
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
                         showingSettings = true
@@ -32,6 +49,9 @@ struct ReadView: View {
             }
             .sheet(isPresented: $showingSettings) {
                 SettingsView()
+            }
+            .onChange(of: app.scanHistory, initial: true) { _, _ in
+                scanLogURL = writeScanLog()
             }
             .alertItem($alert)
         }
@@ -119,6 +139,21 @@ struct ReadView: View {
                 Haptics.error()
                 alert = AlertItem(error: error)
             }
+        }
+    }
+
+    // MARK: Scan log
+
+    /// ShareLink needs a file up front, so the CSV is rewritten whenever the scan history changes.
+    @MainActor
+    private func writeScanLog() -> URL? {
+        guard !app.scanHistory.isEmpty else { return nil }
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("NFC scan log.csv")
+        do {
+            try Data(app.exportScanLogCSV().utf8).write(to: url, options: .atomic)
+            return url
+        } catch {
+            return nil
         }
     }
 }

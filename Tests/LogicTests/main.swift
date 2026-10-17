@@ -324,5 +324,7 @@ checkType5FeliCa()
 
 checkNDEF2()
 
+checkTagInfo()
+
 print("\(passes) passed, \(failures) failed")
 exit(failures == 0 ? 0 : 1)

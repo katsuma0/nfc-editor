@@ -43,6 +43,10 @@ const STORE = (() => {
 
   const scans = { last: null, history: [] };
   const recordScan = (info) => { scans.last = info; scans.history = [info, ...scans.history].slice(0, 20); };
+  // Same columns as AppState.exportScanLogCSV: serial, chip, record count, ISO 8601 time. Fields with a comma,
+  // a quote or a line break are quoted so spreadsheets keep them in one cell.
+  const csvField = (v) => { const t = String(v); return /[",\r\n]/.test(t) ? '"' + t.replace(/"/g, '""') + '"' : t; };
+  const exportScanLogCSV = () => ['Serial,Chip,Records,Scanned at', ...scans.history.map((i) => [SIM.info.serialLine(i), SIM.info.chipLine(i), i.records.length, i.scannedAt].map(csvField).join(','))].join('\r\n') + '\r\n';
 
-  return { settings, saveSettings, addCommandToHistory, clearCommandHistory, get items() { return items; }, add, update, remove, item, duplicate, makeTag, makeProfile, itemRecords, itemInfo, subtitle, exportText, importText, queue, saveQueue, queueRecords, queueBytes, scans, recordScan, uuid };
+  return { settings, saveSettings, addCommandToHistory, clearCommandHistory, get items() { return items; }, add, update, remove, item, duplicate, makeTag, makeProfile, itemRecords, itemInfo, subtitle, exportText, importText, queue, saveQueue, queueRecords, queueBytes, scans, recordScan, exportScanLogCSV, uuid };
 })();

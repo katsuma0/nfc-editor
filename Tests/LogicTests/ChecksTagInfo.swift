@@ -5,19 +5,28 @@ import Foundation
 func checkTagInfo() {
     // MARK: GET_VERSION identification
     // Bytes: 00, vendor 04, product type 04 (NTAG), subtype, major, minor, storage 0F, protocol.
-    let tt = ChipIdentifier.fromGetVersion(hex("0004040301000F03"))
-    check(tt?.name == "NTAG213TT", "NTAG213TT is identified")
-    checkEqual(tt?.family, ChipFamily.ntag21x, "NTAG213TT family is ntag21x")
-    checkEqual(tt?.configPage, 0x29, "NTAG213TT keeps the NTAG213 config page")
-    check(tt?.userPageRange == 4...39, "NTAG213TT keeps the NTAG213 user pages")
+    if let tt = ChipIdentifier.fromGetVersion(hex("0004040301000F03")) {
+        check(tt.name == "NTAG213TT", "NTAG213TT is identified")
+        checkEqual(tt.family, ChipFamily.ntag21x, "NTAG213TT family is ntag21x")
+        checkEqual(tt.configPage, 0x29, "NTAG213TT keeps the NTAG213 config page")
+        check(tt.userPageRange == 4...39, "NTAG213TT keeps the NTAG213 user pages")
+    } else {
+        check(false, "NTAG213TT was not identified")
+    }
 
-    let plain = ChipIdentifier.fromGetVersion(hex("0004040201000F03"))
-    check(plain?.name == "NTAG213", "NTAG213 is still identified")
-    checkEqual(plain?.family, ChipFamily.ntag21x, "NTAG213 family is ntag21x")
+    if let plain = ChipIdentifier.fromGetVersion(hex("0004040201000F03")) {
+        check(plain.name == "NTAG213", "NTAG213 is still identified")
+        checkEqual(plain.family, ChipFamily.ntag21x, "NTAG213 family is ntag21x")
+    } else {
+        check(false, "NTAG213 was not identified")
+    }
 
-    let fVariant = ChipIdentifier.fromGetVersion(hex("0004040401000F03"))
-    check(fVariant?.name == "NTAG213F", "NTAG213F is still identified")
-    checkEqual(fVariant?.family, ChipFamily.ntag21xF, "NTAG213F family is ntag21xF")
+    if let fVariant = ChipIdentifier.fromGetVersion(hex("0004040401000F03")) {
+        check(fVariant.name == "NTAG213F", "NTAG213F is still identified")
+        checkEqual(fVariant.family, ChipFamily.ntag21xF, "NTAG213F family is ntag21xF")
+    } else {
+        check(false, "NTAG213F was not identified")
+    }
 
     // MARK: Signature verdict wiring through the chip family
     check(OriginalitySignature.publicKey(for: ChipIdentifier.ntag213) == OriginalitySignature.ntag21xPublicKey, "NTAG213 maps to the NTAG public key")

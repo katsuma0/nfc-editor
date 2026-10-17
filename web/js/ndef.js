@@ -466,6 +466,7 @@ const NDEF = (() => {
       case 'customMIME': { if (!/^[\w.+-]+\/[\w.+-]+$/.test(f(d, 'mime'))) return 'Enter a MIME type like text/plain.'; if (f(d, 'payloadIsHex') === 'true' && f(d, 'payloadHex') && !isValidHex(f(d, 'payloadHex'))) return 'The payload must be whole bytes in hex.'; return null; }
       case 'external': { if (!f(d, 'domain') || !f(d, 'externalType')) return 'Enter a domain and a type.'; if (f(d, 'payloadIsHex') === 'true' && f(d, 'payloadHex') && !isValidHex(f(d, 'payloadHex'))) return 'The payload must be whole bytes in hex.'; return null; }
       case 'raw': case 'unknown': { for (const k of ['type', 'identifier', 'payloadHex']) if (f(d, k) && !isValidHex(f(d, k))) return 'Hex fields must hold whole bytes.'; return null; }
+      case 'smartPoster': return need('url', 'Enter a URL.');
       default: return null;
     }
   }

@@ -214,3 +214,8 @@ a { color: var(--blue); text-decoration: none; }
 .page-row.unreadable .bytes { color: var(--red); }
 .page-row .tag { font-size: 11px; color: var(--secondary); font-family: inherit; }
 .kbd-note { font-size: 12px; color: var(--secondary); padding: 0 16px; }
+.lock-mark { flex: none; width: 16px; height: 16px; color: var(--secondary); }
+.page-row .lock-mark { margin-left: auto; color: var(--orange); }
+.cell > .lock-mark { width: 18px; height: 18px; color: var(--orange); }
+.steps { margin: 0; padding-left: 22px; font-size: 15px; line-height: 1.4; }
+.steps li + li { margin-top: 6px; }
