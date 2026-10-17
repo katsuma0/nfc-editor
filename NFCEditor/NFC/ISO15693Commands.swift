@@ -81,8 +81,16 @@ enum ISO15693Commands {
 
     /// Core NFC reports -1 for every field the tag did not provide.
     private static func querySystemInfo(_ tag: NFCISO15693Tag, flags: NFCISO15693RequestFlag) async throws -> RawSystemInfo {
-        let (_, dsfid, afi, blockSize, blockCount, icReference) = try await tag.getSystemInfoAndUID(requestFlags: flags)
-        return RawSystemInfo(dsfid: dsfid, afi: afi, blockSize: blockSize, blockCount: blockCount, icReference: icReference)
+        // The labelled completion handler form is the one Core NFC has shipped since iOS 13; the async and Result forms differ between SDKs.
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<RawSystemInfo, Error>) in
+            tag.getSystemInfo(requestFlags: flags, completionHandler: { dsfid, afi, blockSize, blockCount, icReference, error in
+                if let error = error {
+                    continuation.resume(throwing: error)
+                } else {
+                    continuation.resume(returning: RawSystemInfo(dsfid: dsfid, afi: afi, blockSize: blockSize, blockCount: blockCount, icReference: icReference))
+                }
+            })
+        }
     }
 
     static func readBlocks(_ tag: NFCISO15693Tag, from: Int, to: Int, progress: ((Int) -> Void)?) async throws -> [MemoryPage] {
