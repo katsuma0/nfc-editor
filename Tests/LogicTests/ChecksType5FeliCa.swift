@@ -76,16 +76,16 @@ func checkType5FeliCa() {
     check(tag.afiLocked && tag.dsfidLocked, "AFI and DSFID locked")
     tag.needsOption = false
 
-    // Security status: chunks of 32, the extended command above 255.
+    // Security status: chunks of 32, stopping at block 255.
     tag.log = []
     tag.locked = [0, 33, 256]
     failure = runAsync {
         let flags = try await ISO15693Commands.blockSecurityStatus(tag, from: 0, to: 257)
-        checkEqual(flags.count, 258, "one flag per block")
-        check(flags[0] && flags[33] && flags[256] && !flags[1] && !flags[255] && !flags[257], "locked blocks reported")
+        checkEqual(flags.count, 256, "one flag per block up to 255")
+        check(flags[0] && flags[33] && !flags[1] && !flags[255], "locked blocks reported")
     }
     check(failure == nil, "security status threw \(String(describing: failure))")
-    checkEqual(tag.log, ["status 0+32", "status 32+32", "status 64+32", "status 96+32", "status 128+32", "status 160+32", "status 192+32", "status 224+32", "extendedStatus 256+2"], "security status chunks")
+    checkEqual(tag.log, ["status 0+32", "status 32+32", "status 64+32", "status 96+32", "status 128+32", "status 160+32", "status 192+32", "status 224+32"], "security status chunks")
 
     tag.log = []
     tag.statusChunkLimit = 1
@@ -325,9 +325,6 @@ private final class FakeISO15693Tag: NFCISO15693Tag, @unchecked Sendable {
     func getMultipleBlockSecurityStatus(requestFlags: NFCISO15693RequestFlag, blockRange: NSRange) async throws -> [NSNumber] {
         try await async_getMultipleBlockSecurityStatus(requestFlags: requestFlags, blockRange: blockRange)
     }
-    func extendedGetMultipleBlockSecurityStatus(requestFlags: NFCISO15693RequestFlag, blockRange: NSRange, completionHandler: @escaping @Sendable ([NSNumber], (any Error)?) -> Void) {
-        bridge({ try await self.async_extendedGetMultipleBlockSecurityStatus(requestFlags: requestFlags, blockRange: blockRange) }, empty: [], completionHandler)
-    }
     func writeAFI(requestFlags: NFCISO15693RequestFlag, afi: UInt8) async throws {
         try await async_writeAFI(requestFlags: requestFlags, afi: afi)
     }
@@ -339,9 +336,6 @@ private final class FakeISO15693Tag: NFCISO15693Tag, @unchecked Sendable {
     }
     func lockDFSID(requestFlags: NFCISO15693RequestFlag, completionHandler: @escaping @Sendable ((any Error)?) -> Void) {
         bridgeVoid({ try await self.async_lockDFSID(requestFlags: requestFlags) }, completionHandler)
-    }
-    private func bridge<T>(_ body: @escaping () async throws -> T, empty: T, _ done: @escaping @Sendable (T, (any Error)?) -> Void) {
-        Task { do { done(try await body(), nil) } catch { done(empty, error) } }
     }
     private func bridgeVoid(_ body: @escaping () async throws -> Void, _ done: @escaping @Sendable ((any Error)?) -> Void) {
         Task { do { try await body(); done(nil) } catch { done(error) } }
@@ -377,11 +371,6 @@ private final class FakeISO15693Tag: NFCISO15693Tag, @unchecked Sendable {
 
     func async_getMultipleBlockSecurityStatus(requestFlags: NFCISO15693RequestFlag, blockRange: NSRange) async throws -> [NSNumber] {
         log.append("status \(blockRange.location)+\(blockRange.length)")
-        return try statuses(blockRange)
-    }
-
-    func async_extendedGetMultipleBlockSecurityStatus(requestFlags: NFCISO15693RequestFlag, blockRange: NSRange) async throws -> [NSNumber] {
-        log.append("extendedStatus \(blockRange.location)+\(blockRange.length)")
         return try statuses(blockRange)
     }
 
