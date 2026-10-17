@@ -291,7 +291,7 @@ enum TagOperations {
             let count = min(total, maxProbePages)
             if let locked = try await attempt({ try await ISO15693Commands.blockSecurityStatus(tag, from: 0, to: count - 1) }) {
                 let lockedCount = locked.filter { $0 }.count
-                info.extras.append(field("Locked blocks", "\(lockedCount) of \(count)", "lock"))
+                info.extras.append(field("Locked blocks", "\(lockedCount) of \(locked.count)", "lock"))
             }
         }
 

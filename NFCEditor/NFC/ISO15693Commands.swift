@@ -184,11 +184,13 @@ enum ISO15693Commands {
         }
     }
 
-    /// One flag per block in `from...to`, true when the block is locked.
+    /// One flag per block in `from...to`, true when the block is locked. Stops at block 255: the extended
+    /// security status call does not compile against current SDKs, so blocks above it are left unreported.
     static func blockSecurityStatus(_ tag: NFCISO15693Tag, from: Int, to: Int) async throws -> [Bool] {
-        guard from >= 0, to <= lastBlock, from <= to else {
-            throw NFCEditorError.invalidInput("The block range must be within 0 to \(lastBlock).")
+        guard from >= 0, to <= lastBlock, from <= to, from <= lastShortBlock else {
+            throw NFCEditorError.invalidInput("Lock state can be read for blocks 0 to \(lastShortBlock).")
         }
+        let to = min(to, lastShortBlock)
         var locked: [Bool] = []
         var current = from
         while current <= to {
@@ -225,9 +227,6 @@ enum ISO15693Commands {
 
     private static func securityStatus(_ tag: NFCISO15693Tag, from: Int, count: Int) async throws -> [NSNumber] {
         let range = NSRange(location: from, length: count)
-        if from > lastShortBlock {
-            return try await completion { tag.extendedGetMultipleBlockSecurityStatus(requestFlags: defaultFlags, blockRange: range, completionHandler: $0) }
-        }
         return try await tag.getMultipleBlockSecurityStatus(requestFlags: defaultFlags, blockRange: range)
     }
 
@@ -470,15 +469,7 @@ extension ISO15693Commands {
 // MARK: Completion handler bridges
 
 extension ISO15693Commands {
-    // Two calls only work in their completion handler form: the async extended security status returns a different type, and lockDFSID has no async form.
-    fileprivate static func completion<T>(_ start: (@escaping @Sendable (T, Error?) -> Void) -> Void) async throws -> T {
-        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<T, Error>) in
-            start { value, error in
-                if let error = error { continuation.resume(throwing: error) } else { continuation.resume(returning: value) }
-            }
-        }
-    }
-
+    // lockDFSID has no async form, so it is bridged here.
     fileprivate static func completion(_ start: (@escaping @Sendable (Error?) -> Void) -> Void) async throws {
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             start { error in
