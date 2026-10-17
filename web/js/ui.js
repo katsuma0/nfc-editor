@@ -420,7 +420,8 @@ const UI = (() => {
         art.className = 'art busy'; mark.replaceChildren(); heading.textContent = 'Scanning';
         const tag = SIM.get(id);
         tag.sessionStart();
-        const session = { get alertMessage() { return msg.textContent; }, set alertMessage(v) { msg.textContent = v; }, delay: (ms) => new Promise((r) => setTimeout(r, ms)) };
+        // Cancel invalidates the session like iOS does: the operation stops at its next step instead of finishing on the tag.
+        const session = { get alertMessage() { return msg.textContent; }, set alertMessage(v) { msg.textContent = v; }, delay: (ms) => new Promise((r, j) => setTimeout(() => (ended ? j(SIM.E.cancelled()) : r()), ms)) };
         try {
           const value = await o.body(session, tag, count);
           SIM.save();

@@ -465,21 +465,23 @@ const SCREENS = (() => {
           const locked = isLocked(p);
           const risky = type5 ? p.index === 0 : (p.index <= 3 || (chip.configPage != null && p.index >= chip.configPage) || (chip.dynamicLockPage != null && p.index === chip.dynamicLockPage));
           const unit = type5 ? 'Block' : 'Page';
-          UI.sheet({ title: unit + ' 0x' + p.index.toString(16).toUpperCase().padStart(2, '0'), build(sctx) {
+          // The same hex label as the list and the sheet title, so the alerts name the row that was tapped.
+          const label = unit + ' 0x' + p.index.toString(16).toUpperCase().padStart(2, '0');
+          UI.sheet({ title: label, build(sctx) {
             const w = el('div');
             const footer = locked ? 'Locked. This block can no longer be written.' : risky ? (type5 ? 'Block 0 holds the capability container. A wrong value makes the records unreadable.' : 'This page holds the serial number, lock bits, capability container or configuration. A wrong value can lock the tag for good.') : `The ${unit.toLowerCase()} is written exactly as typed.`;
             w.append(section({ rows: [hexField({ label: 'Bytes', value: bytes, byteCount: dump.pageSize, onChange: (b) => { bytes = b; } })], footer, footerClass: risky || locked ? 'danger' : null }));
             if (type5 && !locked) w.append(section({ rows: [buttonRow({ icon: 'lock', title: 'Lock block', destructive: true, onClick: async () => {
-              if (!await UI.confirm({ title: `Lock block ${p.index} for good?`, message: 'The block keeps its current bytes and can never be written again.', confirmTitle: 'Lock block', destructive: true })) return;
+              if (!await UI.confirm({ title: `Lock ${label.toLowerCase()} for good?`, message: 'The block keeps its current bytes and can never be written again.', confirmTitle: 'Lock block', destructive: true })) return;
               try {
                 dump.locked = await UI.nfc.run({ alertMessage: HOLD, successMessage: 'Block locked.', body: (s, t) => SIM.ops.type5LockBlocks(s, t, [p.index]) });
-                sctx.close(); ctx.refresh(); UI.success(`Block ${p.index} is now read only.`);
+                sctx.close(); ctx.refresh(); UI.success(`${label} is now read only.`);
               } catch (e) { fail(e); }
             } })], footer: 'Locking makes the block read only forever. Write the bytes you want first.' }));
             w.append(bigButton({ title: type5 ? 'Write block' : 'Write page', icon: 'wave', destructive: risky, disabled: locked, onClick: async () => {
               if (bytes.length !== dump.pageSize) return UI.alert({ title: 'Check the input', message: `Enter exactly ${UI.bytesLabel(dump.pageSize)}.` });
               if (risky && !await UI.confirm({ title: 'Write a system page?', message: 'This can brick the tag.', confirmTitle: 'Write', destructive: true })) return;
-              try { await UI.nfc.run({ alertMessage: HOLD, successMessage: `${unit} written.`, body: (s, t) => SIM.ops.writePage(s, t, p.index, bytes, password.length ? password : null) }); p.bytes = new Uint8Array(bytes); p.readable = true; sctx.close(); ctx.refresh(); UI.success(`${unit} ${p.index} written.`); } catch (e) { fail(e); }
+              try { await UI.nfc.run({ alertMessage: HOLD, successMessage: `${unit} written.`, body: (s, t) => SIM.ops.writePage(s, t, p.index, bytes, password.length ? password : null) }); p.bytes = new Uint8Array(bytes); p.readable = true; sctx.close(); ctx.refresh(); UI.success(`${label} written.`); } catch (e) { fail(e); }
             } }));
             return w;
           } });
@@ -601,6 +603,7 @@ const SCREENS = (() => {
         wrap.append(section({ rows: [hexField({ label: 'Password (optional)', value: password, byteCount: 4, onChange: (b) => { password = b; } })] }));
         wrap.append(bigButton({ title: 'Write dump', icon: 'docdown', onClick: async () => {
           const dump = currentDump();
+          if (sourceId === 'paste' && pasted.trim() && !dump) return UI.alert({ title: 'Check the input', message: 'The pasted text is not valid hex. Use an even number of hex digits.' });
           if (!dump || !dump.pages.length) return UI.alert({ title: 'Check the input', message: 'Choose a source with at least one page.' });
           if (from > to) return UI.alert({ title: 'Check the input', message: 'The start page must not be after the end page.' });
           if (password.length && password.length !== 4) return UI.alert({ title: 'Check the input', message: 'The password must be 4 bytes. Leave it empty if the tag has none.' });
@@ -891,7 +894,7 @@ const SCREENS = (() => {
         ], footer: '8 bytes for DES or 16 bytes for 2K3DES. A new card uses 8 zero bytes. The key is only used to authenticate; it is never changed.' }));
         let ndefFooter = 'Creates application 000001 with the NFC Forum name D2760000850101, a capability container file E103 and an NDEF file E104 of the chosen size, so phones see a normal NDEF tag.';
         if (formatFirst) ndefFooter += ' Format first deletes every application on the card before creating it.';
-        else if (reading && reading.freeMemory != null) { ndefFooter += ` The card reported ${UI.bytesLabel(reading.freeMemory)} free.`; if (size > reading.freeMemory) ndefFooter += ' The NDEF file may not fit; choose a smaller size.'; }
+        else if (reading && reading.freeMemory != null) { ndefFooter += ` The card reported ${UI.bytesLabel(reading.freeMemory)} free.`; if (size + 32 > reading.freeMemory) ndefFooter += ' The NDEF file may not fit; choose a smaller size.'; }
         wrap.append(section({ header: 'NDEF application', rows: [
           stepperRow({ title: 'NDEF file', value: size, min: 256, max: 7936, step: 256, format: (v) => UI.bytesLabel(v), onChange: (v) => { if (v !== size) { size = v; ctx.refresh(); } } }),
           toggleRow({ title: 'Format first', value: formatFirst, onChange: (v) => { formatFirst = v; ctx.refresh(); } }),
