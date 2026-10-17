@@ -112,7 +112,7 @@ enum ISO15693Commands {
                 do {
                     let blocks: [Data]
                     if extended {
-                        blocks = try await completion { tag.extendedReadMultipleBlocks(requestFlags: defaultFlags, blockRange: range, completionHandler: $0) }
+                        blocks = try await tag.extendedReadMultipleBlocks(requestFlags: defaultFlags, blockRange: range)
                     } else {
                         blocks = try await tag.readMultipleBlocks(requestFlags: defaultFlags, blockRange: range)
                     }
@@ -154,7 +154,7 @@ enum ISO15693Commands {
         }
         try await withOptionRetry { flags in
             if index > lastShortBlock {
-                try await completion { tag.extendedWriteSingleBlock(requestFlags: flags, blockNumber: index, dataBlock: bytes, completionHandler: $0) }
+                try await tag.extendedWriteSingleBlock(requestFlags: flags, blockNumber: index, dataBlock: bytes)
             } else {
                 try await tag.writeSingleBlock(requestFlags: flags, blockNumber: UInt8(index), dataBlock: bytes)
             }
@@ -177,7 +177,7 @@ enum ISO15693Commands {
         try checkBlockIndex(index)
         try await withOptionRetry { flags in
             if index > lastShortBlock {
-                try await completion { tag.extendedLockBlock(requestFlags: flags, blockNumber: index, completionHandler: $0) }
+                try await tag.extendedLockBlock(requestFlags: flags, blockNumber: index)
             } else {
                 try await tag.lockBlock(requestFlags: flags, blockNumber: UInt8(index))
             }
@@ -228,12 +228,12 @@ enum ISO15693Commands {
         if from > lastShortBlock {
             return try await completion { tag.extendedGetMultipleBlockSecurityStatus(requestFlags: defaultFlags, blockRange: range, completionHandler: $0) }
         }
-        return try await completion { tag.getMultipleBlockSecurityStatus(requestFlags: defaultFlags, blockRange: range, completionHandler: $0) }
+        return try await tag.getMultipleBlockSecurityStatus(requestFlags: defaultFlags, blockRange: range)
     }
 
     private static func readSingleBlock(_ tag: NFCISO15693Tag, index: Int) async throws -> Data {
         if index > lastShortBlock {
-            return try await completion { tag.extendedReadSingleBlock(requestFlags: defaultFlags, blockNumber: index, completionHandler: $0) }
+            return try await tag.extendedReadSingleBlock(requestFlags: defaultFlags, blockNumber: index)
         }
         return try await tag.readSingleBlock(requestFlags: defaultFlags, blockNumber: UInt8(index))
     }
@@ -288,20 +288,20 @@ enum ISO15693Commands {
 extension ISO15693Commands {
     static func writeAFI(_ tag: NFCISO15693Tag, afi: UInt8) async throws {
         try await withOptionRetry { flags in
-            try await completion { tag.writeAFI(requestFlags: flags, afi: afi, completionHandler: $0) }
+            try await tag.writeAFI(requestFlags: flags, afi: afi)
         }
     }
 
     /// Permanent: the AFI can never be changed again.
     static func lockAFI(_ tag: NFCISO15693Tag) async throws {
         try await withOptionRetry { flags in
-            try await completion { tag.lockAFI(requestFlags: flags, completionHandler: $0) }
+            try await tag.lockAFI(requestFlags: flags)
         }
     }
 
     static func writeDSFID(_ tag: NFCISO15693Tag, dsfid: UInt8) async throws {
         try await withOptionRetry { flags in
-            try await completion { tag.writeDSFID(requestFlags: flags, dsfid: dsfid, completionHandler: $0) }
+            try await tag.writeDSFID(requestFlags: flags, dsfid: dsfid)
         }
     }
 
@@ -470,8 +470,8 @@ extension ISO15693Commands {
 // MARK: Completion handler bridges
 
 extension ISO15693Commands {
-    // The newer ISO 15693 calls are only guaranteed in their completion handler form across SDKs, so they are bridged here.
-    fileprivate static func completion<T>(_ start: (@escaping (T, Error?) -> Void) -> Void) async throws -> T {
+    // Two calls only work in their completion handler form: the async extended security status returns a different type, and lockDFSID has no async form.
+    fileprivate static func completion<T>(_ start: (@escaping @Sendable (T, Error?) -> Void) -> Void) async throws -> T {
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<T, Error>) in
             start { value, error in
                 if let error = error { continuation.resume(throwing: error) } else { continuation.resume(returning: value) }
@@ -479,7 +479,7 @@ extension ISO15693Commands {
         }
     }
 
-    fileprivate static func completion(_ start: (@escaping (Error?) -> Void) -> Void) async throws {
+    fileprivate static func completion(_ start: (@escaping @Sendable (Error?) -> Void) -> Void) async throws {
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             start { error in
                 if let error = error { continuation.resume(throwing: error) } else { continuation.resume(returning: ()) }
