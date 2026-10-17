@@ -153,7 +153,8 @@ struct LockPagesToolView: View {
 
     private var confirmationMessage: String {
         let list = selectedGroups.map { LockPagesToolView.shortTitle(for: $0.pages) }.joined(separator: ", ")
-        return "Locks \(list). These pages become read only forever. This cannot be undone."
+        let effect = selectedPageCount == 1 ? "This page becomes read only forever." : "These pages become read only forever."
+        return "Locks \(list). \(effect) This cannot be undone."
     }
 
     private func selectAllTitle(_ state: LockStateResult) -> String {
@@ -219,8 +220,9 @@ struct LockPagesToolView: View {
                     alertMessage: "Hold your iPhone near the tag.",
                     successMessage: "Lock state read."
                 ) { session, tag -> LockStateResult in
-                    let (spec, uid) = try await TagOperations.identify(session, tag)
+                    // lockState rejects tags without lock bits, so it runs first to fail fast on them.
                     let groups = try await TagOperations.lockState(session, tag)
+                    let (spec, uid) = try await TagOperations.identify(session, tag)
                     return LockStateResult(chipName: spec.name, uid: uid, groups: groups, readAt: Date())
                 }
                 state = result
