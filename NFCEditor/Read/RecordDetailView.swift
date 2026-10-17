@@ -254,7 +254,7 @@ struct RecordDetailView: View {
         case .geo: return "coordinates"
         case .address: return "address"
         case .wifi: return "network name"
-        case .bluetooth: return "address"
+        case .bluetooth, .handover: return "address"
         case .contact: return "name"
         case .app: return "package name"
         case .customMIME, .external: return "type"
