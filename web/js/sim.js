@@ -538,7 +538,7 @@ const SIM = (() => {
       const includeDump = opts.includeDump !== false;
       session.alertMessage = 'Identifying the tag.'; await session.delay(300);
       if (tag.kind === 'type5' && tag.destroyed) throw E.destroyed();
-      const info = { id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()), scannedAt: new Date().toISOString(), technology: technology(tag), chip: tag.spec, uid: H(tag.uid), ndefStatus: 'unknown', ndefCapacity: null, ndefUsedBytes: null, records: [], passwordProtected: null, counter: null, counterEnabled: null, signature: null, signatureVerdict: null, tamperStatus: null, versionBytes: null, dump: null, extras: [] };
+      const info = { id: NDEF.uuid(), scannedAt: new Date().toISOString(), technology: technology(tag), chip: tag.spec, uid: H(tag.uid), ndefStatus: 'unknown', ndefCapacity: null, ndefUsedBytes: null, records: [], passwordProtected: null, counter: null, counterEnabled: null, signature: null, signatureVerdict: null, tamperStatus: null, versionBytes: null, dump: null, extras: [] };
       session.alertMessage = 'Reading records.'; await session.delay(350);
       const c = ndefContent(tag);
       info.ndefStatus = c.status; info.ndefCapacity = c.capacity; info.records = c.records; info.ndefUsedBytes = c.status === 'notSupported' ? null : (c.records.length ? NDEF.byteCount(c.records) : 0);

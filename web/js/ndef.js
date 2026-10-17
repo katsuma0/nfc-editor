@@ -13,6 +13,17 @@ const NDEF = (() => {
 
   // Bytes
   const utf8 = (s) => encoder.encode(s);
+  // crypto.randomUUID is missing before Safari 15.4 and outside secure contexts (a plain http address on the LAN),
+  // so build a version 4 UUID from getRandomValues, which every supported browser has.
+  function uuid() {
+    try { if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID(); } catch (e) { /* fall through */ }
+    const b = new Uint8Array(16);
+    if (typeof crypto !== 'undefined' && crypto.getRandomValues) crypto.getRandomValues(b);
+    else for (let i = 0; i < 16; i++) b[i] = Math.floor(Math.random() * 256);
+    b[6] = (b[6] & 0x0f) | 0x40; b[8] = (b[8] & 0x3f) | 0x80;
+    const h = Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('');
+    return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
+  }
   const text = (b) => decoder.decode(b);
   const hex = (b, sep = '') => Array.from(b, (x) => x.toString(16).toUpperCase().padStart(2, '0')).join(sep);
   const normalizeHex = (s) => s.replace(/0x/gi, '').replace(/[^0-9a-fA-F]/g, '').toUpperCase();
@@ -258,6 +269,20 @@ const NDEF = (() => {
     lines.push('END:VCARD');
     return lines.join('\r\n') + '\r\n';
   }
+  // Splits a vCard value on the semicolons that are not escaped. A character walk instead of a lookbehind
+  // regex, because Safari before 16.4 rejects the whole script when it meets one.
+  function splitVCardFields(value) {
+    const parts = [];
+    let cur = '';
+    for (let i = 0; i < value.length; i++) {
+      const ch = value[i];
+      if (ch === '\\' && i + 1 < value.length) { cur += ch + value[i + 1]; i++; }
+      else if (ch === ';') { parts.push(cur); cur = ''; }
+      else cur += ch;
+    }
+    parts.push(cur);
+    return parts;
+  }
   function decodeVCard(s) {
     if (!/BEGIN:VCARD/i.test(s)) return null;
     const unfolded = s.replace(/\r?\n[ \t]/g, '');
@@ -268,14 +293,14 @@ const NDEF = (() => {
       if (idx < 0) continue;
       const name = line.slice(0, idx).split(';')[0].toUpperCase();
       const value = line.slice(idx + 1);
-      if (name === 'N') { const p = value.split(/(?<!\\);/); card.lastName = vUnescape(p[0] || ''); card.firstName = vUnescape(p[1] || ''); }
+      if (name === 'N') { const p = splitVCardFields(value); card.lastName = vUnescape(p[0] || ''); card.firstName = vUnescape(p[1] || ''); }
       else if (name === 'FN') fn = vUnescape(value);
-      else if (name === 'ORG') card.organization = vUnescape(value.split(/(?<!\\);/)[0]);
+      else if (name === 'ORG') card.organization = vUnescape(splitVCardFields(value)[0]);
       else if (name === 'TITLE') card.title = vUnescape(value);
       else if (name === 'TEL' && !card.phone) card.phone = vUnescape(value);
       else if (name === 'EMAIL' && !card.email) card.email = vUnescape(value);
       else if (name === 'URL' && !card.website) card.website = vUnescape(value);
-      else if (name === 'ADR' && !card.address) card.address = value.split(/(?<!\\);/).map(vUnescape).filter(Boolean).join(', ');
+      else if (name === 'ADR' && !card.address) card.address = splitVCardFields(value).map(vUnescape).filter(Boolean).join(', ');
       else if (name === 'NOTE') card.note = vUnescape(value);
     }
     if (!card.firstName && !card.lastName && fn) { const p = fn.split(' '); card.firstName = p.shift(); card.lastName = p.join(' '); }
@@ -445,7 +470,7 @@ const NDEF = (() => {
     wifi: { auth: 'wpa2PSK', encryption: 'aes', hidden: 'false' }, bluetooth: { handover: 'false' }, social: { platform: 'instagram' },
     customMIME: { payloadIsHex: 'false' }, external: { payloadIsHex: 'false' }, raw: { tnf: '1', payloadIsHex: 'true' }, unknown: { tnf: '1', payloadIsHex: 'true' },
   };
-  const draft = (kind, fields = {}) => ({ id: crypto.randomUUID ? crypto.randomUUID() : String(Math.random()), kind, fields: Object.assign({}, DEFAULTS[kind] || {}, fields) });
+  const draft = (kind, fields = {}) => ({ id: uuid(), kind, fields: Object.assign({}, DEFAULTS[kind] || {}, fields) });
   const f = (d, k) => (d.fields[k] || '').trim();
   const withScheme = (u) => (/^[a-z][a-z0-9+.-]*:/i.test(u) ? u : 'https://' + u);
   function validate(d) {
@@ -551,7 +576,7 @@ const NDEF = (() => {
   }
   const draftSize = (d) => { try { return buildAll(d).reduce((n, r) => n + encodedSize(r), 0); } catch (e) { return 0; } };
 
-  return { TNF, TNF_LABEL, URI_PREFIXES, utf8, text, hex, fromHex, normalizeHex, isValidHex, concat, equal, ascii, percentEncode,
+  return { TNF, TNF_LABEL, URI_PREFIXES, uuid, utf8, text, hex, fromHex, normalizeHex, isValidHex, concat, equal, ascii, percentEncode,
     record, typeString, encodedSize, encode, decode, byteCount, tlv, messageFromTLV, abbreviate, expand, build: B,
     encodeWifi, decodeWifi, WIFI_AUTH, WIFI_ENC, encodeBluetooth, decodeBluetooth, isValidMAC, normalizeMAC, encodeVCard, decodeVCard, VCARD_FIELDS, fullName,
     SOCIAL, socialURL, detectSocial, KINDS, kindInfo, WRITABLE, parseText, parseURI, parseSmartPoster, parse,

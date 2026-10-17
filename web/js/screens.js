@@ -93,7 +93,7 @@ const SCREENS = (() => {
           if (!info.signature) return null;
           const v = info.signatureVerdict && VERDICTS[info.signatureVerdict];
           if (!v) return r('Signature', info.signature.slice(0, 16) + '…', 'signature', { valueMono: true, onClick: copySignature });
-          return colorValue(r('Signature', v.title, v.icon, { subtitle: hexSpaced(info.signature.slice(0, 16)) + '…', subtitleMono: true, onClick: copySignature }), v.color);
+          return colorValue(r('Signature', v.title, v.icon, { subtitle: hexSpaced(info.signature.slice(0, 8)) + '…', subtitleMono: true, onClick: copySignature }), v.color);
         };
         const tamperRow = () => { if (!info.tamperStatus) return null; const t = tamperInfo(info.tamperStatus); return colorValue(r('Tamper', t.text, 'shield', { subtitle: info.tamperStatus, subtitleMono: true }), t.color); };
         // The mirror setting comes first, like TagDetailView; scans saved before the dedicated tamper row may still carry a tamper extra.
@@ -103,7 +103,10 @@ const SCREENS = (() => {
           r('Tag type', SIM.info.typeLine(info), 'wave'),
           r('Chip', SIM.info.chipLine(info), 'cpu'),
           r('Technology', info.technology, 'info'),
-          r('Serial number', SIM.info.serialLine(info), 'key', { valueMono: true, onClick: () => UI.copy(SIM.info.serialLine(info)).then(() => UI.haptic('tap')), accessory: 'none' }),
+          // A 7-byte or longer serial does not fit beside the title at phone width, so it goes under it.
+          SIM.info.serialLine(info).length > 14
+            ? row({ icon: 'key', iconBg: '#636366', title: 'Serial number', subtitle: SIM.info.serialLine(info), subtitleMono: true, onClick: () => UI.copy(SIM.info.serialLine(info)).then(() => UI.haptic('tap')), accessory: 'none' })
+            : r('Serial number', SIM.info.serialLine(info), 'key', { valueMono: true, onClick: () => UI.copy(SIM.info.serialLine(info)).then(() => UI.haptic('tap')), accessory: 'none' }),
           r('ATQA', SIM.info.atqaLine(info), 'number', { valueMono: true }),
           r('SAK', SIM.info.sakLine(info), 'number', { valueMono: true }),
           r('Password protected', info.passwordProtected == null ? 'Unknown' : info.passwordProtected ? 'Yes' : 'No', 'lock'),
@@ -117,8 +120,8 @@ const SCREENS = (() => {
           // Long hex values (GET_VERSION, for example) go under the title so they never run into it.
           ...orderedExtras.map((f) => { const mono = /^[0-9A-F ]+$/.test(f.value); return mono && f.value.length > 14 ? row({ icon: f.icon || 'info', iconBg: '#636366', title: f.label, subtitle: f.value, subtitleMono: true, subtitleWrap: true, accessory: 'none' }) : r(f.label, f.value, f.icon || 'info', { valueMono: mono }); }),
         ];
-        if (info.chip.notes) rows.push(r('Note', info.chip.notes, 'info'));
-        wrap.append(section({ header: 'Tag', rows }));
+        // Chip notes sit under the list as its footer, like TagDetailView.
+        wrap.append(section({ header: 'Tag', rows, footer: info.chip.notes || null }));
         const recordRows = info.records.length ? info.records.map((rec) => recordRow(rec, () => ctx.nav.push(recordDetailScreen(rec)))) : [row({ title: 'No records', cls: 'center', accessory: 'none' })];
         wrap.append(section({ header: 'Records', rows: recordRows, footer: info.ndefStatus === 'notSupported' ? 'The tag is not NDEF formatted, or its records are password protected.' : null }));
         if (info.dump) wrap.append(section({ header: 'Memory', rows: [row({ icon: 'memorychip', iconBg: '#5856D6', title: 'View memory dump', subtitle: `${info.dump.pages.length} pages`, onClick: () => ctx.nav.push(memoryDumpScreen(info.dump)) })] }));
@@ -209,7 +212,7 @@ const SCREENS = (() => {
         wrap.append(section({ header: 'Options', rows: [
           row({ icon: 'gear', iconBg: '#636366', title: 'Write options', subtitle: summary, onClick: () => ctx.nav.push(writeOptionsScreen()) }),
           toggleRow({ icon: 'layers', iconBg: 'var(--blue)', title: 'Write to several tags', value: several, onChange: (v) => { several = v; ctx.refresh(); } }),
-        ], footer: several ? 'The NFC sheet stays open after each tag. Hold the tags one after another, then tap Cancel when you are done. iOS closes the sheet after 60 seconds.' : null }));
+        ], footer: several ? 'The NFC sheet stays open, so hold the tags one after another and tap Cancel when you are done. iOS closes the sheet after 60 seconds.' : null }));
         const lockNote = o.lockAfterWrite ? (several ? 'Every tag will be locked permanently.' : 'The tag will be locked permanently.') : null;
         wrap.append(scanButton({ title: several ? 'Write to tags' : 'Write to tag', icon: 'wave', disabled: !n, onClick: () => write(ctx) }, lockNote, 'danger'));
         return wrap;
@@ -271,7 +274,7 @@ const SCREENS = (() => {
           toggleRow({ title: 'Verify after write', subtitle: 'Reads the tag back and compares it.', value: o.verifyAfterWrite, onChange: (v) => { o.verifyAfterWrite = v; STORE.saveQueue(); } }),
           toggleRow({ title: 'Erase before write', subtitle: 'Writes an empty record first.', value: o.eraseFirst, onChange: (v) => { o.eraseFirst = v; STORE.saveQueue(); } }),
         ] }));
-        wrap.append(section({ rows: [toggleRow({ title: 'Lock tag after write', value: o.lockAfterWrite, onChange: (v) => { o.lockAfterWrite = v; STORE.saveQueue(); } })], footer: 'Locking is permanent. A locked tag can never be written again, by any app. The switch resets after every write.', footerClass: 'danger' }));
+        wrap.append(section({ rows: [toggleRow({ title: 'Lock tag after write', value: o.lockAfterWrite, onChange: (v) => { o.lockAfterWrite = v; STORE.saveQueue(); } })], footer: 'A locked tag can never be written again, by any app. The switch turns itself off after every write.', footerClass: 'danger' }));
         return wrap;
       },
     };
@@ -279,7 +282,13 @@ const SCREENS = (() => {
   UI.sheetAddRecord = (onPick) => {
     UI.sheet({ title: 'Add a record', build(ctx) {
       const wrap = el('div');
-      wrap.append(section({ rows: NDEF.WRITABLE.map((id) => { const k = NDEF.kindInfo(id); return row({ icon: k.icon, title: k.name, subtitle: k.blurb, subtitleWrap: true, onClick: () => { ctx.close(); setTimeout(() => onPick(id), 320); } }); }) }));
+      // Same three groups as AddRecordView, in WRITABLE order; any kind not named lands under Advanced.
+      // Picking a kind closes this sheet and opens the editor, so the rows are buttons without a chevron.
+      const common = ['text', 'url', 'email', 'contact', 'phone', 'sms', 'geo', 'address'], connect = ['wifi', 'bluetooth', 'social', 'app'];
+      const groups = [['Common', (id) => common.includes(id)], ['Connect', (id) => connect.includes(id)], ['Advanced', (id) => !common.includes(id) && !connect.includes(id)]];
+      for (const [header, test] of groups) {
+        wrap.append(section({ header, rows: NDEF.WRITABLE.filter(test).map((id) => { const k = NDEF.kindInfo(id); return row({ icon: k.icon, title: k.name, subtitle: k.blurb, subtitleWrap: true, accessory: 'none', onClick: () => { ctx.close(); setTimeout(() => onPick(id), 320); } }); }) }));
+      }
       return wrap;
     } });
   };
@@ -309,7 +318,7 @@ const SCREENS = (() => {
             case 'geo': return [f('latitude', 'Latitude', { placeholder: '43.8561', inputmode: 'decimal' }), f('longitude', 'Longitude', { placeholder: '-79.3370', inputmode: 'decimal' }), sel('geoFormat', 'Format', [{ value: 'geo', label: 'geo: URI' }, { value: 'apple', label: 'Apple Maps link' }, { value: 'google', label: 'Google Maps link' }])];
             case 'address': return [f('address', null, { placeholder: 'Street, city, province', multiline: true, autocap: 'words' }), sel('addressFormat', 'Opens in', [{ value: 'apple', label: 'Apple Maps' }, { value: 'google', label: 'Google Maps' }, { value: 'geo', label: 'geo: URI' }])];
             case 'wifi': return [f('ssid', 'Network', { placeholder: 'Name' }), f('password', 'Password', { placeholder: '8 characters or more' }), sel('auth', 'Security', NDEF.WIFI_AUTH.map((a) => ({ value: a[0], label: a[1] }))), sel('encryption', 'Encryption', NDEF.WIFI_ENC.map((a) => ({ value: a[0], label: a[1] }))), tog('hidden', 'Hidden network')];
-            case 'bluetooth': return [f('mac', 'Address', { placeholder: 'AA:BB:CC:DD:EE:FF', mono: true, autocap: 'characters' }), f('name', 'Name', { placeholder: 'Optional', autocap: 'words' }), tog('handover', 'Wrap in Handover Select (Android pairing)', 'Android phones offer to pair only when the pairing record comes with a Handover Select record. It adds a few bytes. iPhones ignore both records.')];
+            case 'bluetooth': return [f('mac', 'Address', { placeholder: 'AA:BB:CC:DD:EE:FF', mono: true, autocap: 'characters' }), f('name', 'Name', { placeholder: 'Optional', autocap: 'words' }), tog('handover', 'Wrap in Handover Select (Android pairing)', 'Android offers to pair only when the pairing record comes inside a Handover Select record. iPhones ignore both.')];
             case 'social': return [sel('platform', 'Platform', NDEF.SOCIAL.map((s) => ({ value: s[0], label: s[1] }))), f('handle', 'Username', { placeholder: 'without the @' })];
             case 'app': return [f('package', 'Package', { placeholder: 'com.example.app' })];
             case 'customMIME': return [f('mime', 'MIME type', { placeholder: 'text/plain' }), ...payloadRows()];
@@ -321,7 +330,7 @@ const SCREENS = (() => {
           }
         };
         footer = el('div', { class: 'section-footer' });
-        const note = { smartPoster: 'A smart poster wraps the URL with a title that some readers show before opening it. iPhones open the URL. https:// is added when you leave it out.' }[d.kind];
+        const note = { smartPoster: 'Some readers show the title before they open the URL; iPhones open the URL. https:// is added when you leave it out.' }[d.kind];
         const render = () => { wrap.replaceChildren(...[section({ rows: makeRows(), footer }), note ? textBlock(note) : null].filter(Boolean)); validateNow(); };
         render();
         return wrap;
@@ -404,7 +413,7 @@ const SCREENS = (() => {
   }
   const LOCK_METHODS = {
     bits: { label: 'Lock bits', icon: 'lock', explain: 'Sets the lock bits of the chip. No app and no phone can change the tag again, not even with raw commands.', warn: 'Locking is permanent. The records stay readable, but the tag can never be written, erased or formatted again, by this app or any other.', button: 'Lock tag', confirm: 'Lock this tag permanently?', message: 'The tag you scan next becomes read only forever.', confirmTitle: 'Lock', sheet: 'Tag locked.', done: 'The tag is now read only.' },
-    flag: { label: 'NDEF flag only', icon: 'doc', explain: 'Only marks the tag as read only in its capability container. Phones treat it as read only and refuse to write records, but raw page writes, the memory editor and passwords still work. Works on Type 2 and Type 5 tags.', warn: 'The read only flag is permanent too. It cannot be cleared, so phones will never write records to this tag again.', button: 'Set read only flag', confirm: 'Mark this tag read only permanently?', message: 'Phones will treat the tag you scan next as read only forever.', confirmTitle: 'Mark read only', sheet: 'Read only flag set.', done: 'The tag is now marked read only. Phones will no longer write records to it.' },
+    flag: { label: 'NDEF flag only', icon: 'doc', explain: 'Marks a Type 2 or Type 5 tag read only in its capability container, so phones refuse to write records. Raw page writes, the memory editor and passwords still work.', warn: 'The read only flag is permanent too. It cannot be cleared, so phones will never write records to this tag again.', button: 'Set read only flag', confirm: 'Mark this tag read only permanently?', message: 'Phones will treat the tag you scan next as read only forever.', confirmTitle: 'Mark read only', sheet: 'Read only flag set.', done: 'The tag is now marked read only. Phones will no longer write records to it.' },
   };
   function lockTool() {
     let understood = false, method = 'bits';
@@ -435,7 +444,7 @@ const SCREENS = (() => {
         wrap.append(section({ rows: [
           row({ title: 'Password', subtitle: showPassword ? 'Only for tags that need one.' : 'Tap if the tag needs one.', onClick: () => { showPassword = !showPassword; ctx.refresh(); }, accessory: 'none', right: UI.icon(showPassword ? 'up' : 'down', 'chevron') }),
           showPassword ? hexField({ value: password, byteCount: 4, onChange: (b) => { password = b; } }) : null,
-        ], footer: 'Reads every page of the chip. Tap a page to change it. Pages 0 to 3 hold the serial number, lock bits and capability container; the last pages hold the configuration.' }));
+        ], footer: 'Reads every page of the chip; tap a page to change it. Pages 0 to 3 hold the serial number, lock bits and capability container, and the last pages hold the configuration.' }));
         wrap.append(bigButton({ title: dump ? 'Read again' : 'Read memory', icon: 'wave', onClick: async () => {
           if (password.length && password.length !== 4) return UI.alert({ title: 'Check the input', message: 'The password must be 4 bytes. Leave it empty if the tag has none.' });
           try {
@@ -455,7 +464,7 @@ const SCREENS = (() => {
           const note = (p) => { if (type5) return p.index === 0 ? 'CC' : ''; if (!chip.supportsRawPages) return ''; if (p.index <= 1) return 'UID'; if (p.index === 2) return 'lock'; if (p.index === 3) return 'CC'; if (chip.configPage != null && p.index >= chip.configPage) return ['CFG0', 'CFG1', 'PWD', 'PACK'][p.index - chip.configPage] || 'cfg'; if (chip.dynamicLockPage != null && p.index === chip.dynamicLockPage) return 'lock'; return ''; };
           const rows = dump.pages.map((p) => pageRow(p, chip.supportsRawPages === false ? null : () => editPage(p), note(p), isLocked(p)));
           let footer = chip.supportsRawPages === false ? 'This chip does not allow single pages to be written. The pages show the NDEF file as read from the tag.' : 'Pages marked in red could not be read.';
-          if (type5) footer = dump.locked ? 'Tap a block to edit or lock it. Block 0 holds the capability container. A lock marks blocks that can no longer be written.' : 'Tap a block to edit it. Block 0 holds the capability container. This tag did not report which blocks are locked.';
+          if (type5) footer = dump.locked ? 'Tap a block to edit or lock it. A lock marks blocks that can no longer be written.' : 'Tap a block to edit it. This tag did not report which blocks are locked.';
           if (type5 && dump.locked) { const n = dump.locked.filter(Boolean).length; wrap.append(section({ rows: [row({ icon: 'lock', iconBg: 'var(--orange)', title: 'Locked blocks', value: n ? String(n) : 'None', accessory: 'none' })] })); }
           wrap.append(section({ header: `${dump.pages.length} ${type5 ? 'blocks' : 'pages'} of ${dump.pageSize} bytes`, rows, footer }));
         }
@@ -513,7 +522,7 @@ const SCREENS = (() => {
             toggleRow({ title: 'Also protect reads', subtitle: 'Off: anyone can read, only the password can write.', value: protectReads, onChange: (v) => { protectReads = v; } }),
             stepperRow({ title: 'Protect from page', value: fromPage, min: 0, max: 255, onChange: (v) => { fromPage = v; } }),
             selectRow({ title: 'Wrong attempts allowed', value: String(authLimit), options: [{ value: '0', label: 'Unlimited' }, ...[1, 2, 3, 4, 5, 6, 7].map((n) => ({ value: String(n), label: String(n) }))], onChange: (v) => { authLimit = Number(v); } }),
-          ], footer: 'Page 4 is the first page of user memory, so 4 protects everything you can write. With a limit set, the tag stops accepting the password for good after that many wrong tries. Leave it on Unlimited unless you really need it.' }));
+          ], footer: 'Page 4 is the first page of user memory, so 4 protects everything you can write. With a limit, the tag rejects the password for good after that many wrong tries.' }));
           wrap.append(section({ rows: [row({ title: 'Current password', subtitle: 'Only if the tag already has one.', onClick: () => { showCurrent = !showCurrent; ctx.refresh(); }, accessory: 'none', right: UI.icon(showCurrent ? 'up' : 'down', 'chevron') }), showCurrent ? hexField({ value: current, byteCount: 4, onChange: (b) => { current = b; } }) : null] }));
           wrap.append(bigButton({ title: 'Set password', icon: 'key', onClick: async () => {
             if (password.length !== 4) return UI.alert({ title: 'Check the input', message: 'Enter a 4-byte password.' });
@@ -525,7 +534,7 @@ const SCREENS = (() => {
             try { await UI.nfc.run({ alertMessage: HOLD, successMessage: 'Password set.', body: (s, t) => SIM.ops.setPassword(s, t, { password, pack, protectFromPage: fromPage, protectReads, authLimit, currentPassword: current.length ? current : null }) }); UI.success(`Pages ${fromPage} and up now need the password to ${protectReads ? 'read and write' : 'write'}.`); } catch (e) { fail(e); }
           } }));
         } else if (mode === 'config') {
-          wrap.append(section({ rows: [row({ icon: 'lock', iconBg: 'var(--orange)', title: 'Lock configuration', subtitle: 'Sets CFGLCK, which locks the configuration pages for good. The protected pages, read protection, attempt limit, counter and mirror settings stay exactly as they are now. The password and PACK can still be changed.', subtitleWrap: true, accessory: 'none' })], footer: 'Set the password, counter and mirror the way you want them first. Lock the configuration last, when nobody should be able to switch the protection off.' }));
+          wrap.append(section({ rows: [row({ icon: 'lock', iconBg: 'var(--orange)', title: 'Lock configuration', subtitle: 'Sets CFGLCK, which freezes the protected pages, read protection, attempt limit, counter and mirror settings for good. The password and PACK can still be changed.', subtitleWrap: true, accessory: 'none' })], footer: 'Set the password, counter and mirror the way you want them first. Lock the configuration last, when nobody should be able to switch the protection off.' }));
           wrap.append(section({ rows: [hexField({ label: 'Current password', value: cfgPassword, byteCount: 4, onChange: (b) => { cfgPassword = b; } })], footer: 'Only needed when the configuration pages are password protected. Leave it empty otherwise.' }));
           wrap.append(scanButton({ title: 'Lock configuration', icon: 'lock', destructive: true, onClick: async () => {
             if (badOptional(cfgPassword, 4)) return check('The current password must be 4 bytes. Leave it empty if the tag has none.');
@@ -633,7 +642,7 @@ const SCREENS = (() => {
       title: 'Counter',
       build(ctx) {
         const wrap = el('div');
-        wrap.append(section({ rows: values ? values.map((v, i) => row({ title: values.length > 1 ? `Counter ${i}` : 'Scans', value: String(v), accessory: 'none' })) : [row({ title: 'Not read yet', subtitle: 'NTAG213, 215 and 216 count every scan once the counter is on. Ultralight EV1 has three counters.', subtitleWrap: true, accessory: 'none' })] }));
+        wrap.append(section({ rows: values ? values.map((v, i) => row({ title: values.length > 1 ? `Counter ${i}` : 'Scans', value: String(v), accessory: 'none' })) : [row({ title: 'Not read yet', subtitle: 'NTAG 213, 215 and 216 count every scan once the counter is on. Ultralight EV1 has three counters.', subtitleWrap: true, accessory: 'none' })] }));
         wrap.append(bigButton({ title: 'Read counter', icon: 'number', onClick: async () => {
           try { values = await UI.nfc.run({ alertMessage: HOLD, successMessage: 'Counter read.', body: async (s, t) => { if (t.spec.counterCount === 3) { const out = []; for (let a = 0; a < 3; a++) out.push(await SIM.ops.readCounter(s, t, a)); return out; } return [await SIM.ops.readCounter(s, t, 2)]; } }); ctx.refresh(); } catch (e) { fail(e); }
         } }));
@@ -641,7 +650,7 @@ const SCREENS = (() => {
           toggleRow({ title: 'Counter enabled', subtitle: 'Applies to the next NTAG you scan.', value: enable, onChange: (v) => { enable = v; ctx.refresh(); } }),
           toggleRow({ title: 'Counter needs the password', value: needsPassword, onChange: (v) => { needsPassword = v; } }),
           hexField({ label: 'Password (optional)', value: password, byteCount: 4, onChange: (b) => { password = b; } }),
-        ], footer: "Only NTAG 213, 215 and 216 can switch their counter on or off. With Counter needs the password on, the tag only tells its count to a reader that gave the password first. Choose the state you want, then hold the tag. Enter the password if the tag's configuration is password protected." }));
+        ], footer: "Only NTAG 213, 215 and 216 can switch their counter on or off. With Counter needs the password on, the tag tells its count only to a reader that gave the password." }));
         wrap.append(bigButton({ title: enable ? 'Enable counter' : 'Disable counter', icon: 'wave', onClick: async () => {
           if (badOptional(password, 4)) return check('The password must be 4 bytes. Leave it empty if the tag has none.');
           const on = enable, protect = needsPassword, pwd = optionalBytes(password);
@@ -665,7 +674,7 @@ const SCREENS = (() => {
             row({ iconPlain: v.icon, iconColor: v.color, title: v.title, subtitle: v.text, subtitleWrap: true, accessory: 'none' }),
             result.signature ? el('div', { class: 'cell plain' }, el('div', { class: 'result-row', text: hexSpaced(result.signature) })) : null,
             result.signature ? buttonRow({ icon: 'copy', title: 'Copy', onClick: async () => { await UI.copy(hexSpaced(result.signature)); UI.alert({ title: 'Copied', message: '32 bytes as hex.' }); } }) : null,
-          ], footer: `Read at ${timeLabel(result.readAt)}. The check uses the serial number as well as the signature, and runs on your iPhone without a network connection. The web preview simulates the check.` }));
+          ], footer: `Read at ${timeLabel(result.readAt)}. The iPhone checks the signature against the serial number without a network; the web preview simulates it.` }));
         }
         wrap.append(bigButton({ title: 'Read signature', icon: 'signature', onClick: async () => {
           try {
@@ -793,7 +802,7 @@ const SCREENS = (() => {
             state = Object.assign({}, state, { groups: after, readAt: new Date() }); selected = new Set(); ctx.refresh();
             UI.success(pages === 1 ? 'The page is locked. The list shows the new lock state.' : 'The pages are locked. The list shows the new lock state.');
           } catch (e) { fail(e); }
-        } }, 'Locking is permanent. Locked pages can never be written again, by this app or any other, and the lock bits can never be cleared. Hold the same tag you read.', 'danger'));
+        } }, 'Locked pages can never be written again by any app, and lock bits can never be cleared. Hold the same tag you read.', 'danger'));
         return wrap;
       },
     };
@@ -807,7 +816,7 @@ const SCREENS = (() => {
     const protectionFooter = () => {
       if (firstPage >= 48) return 'Page 48 is past the end of the memory, so no page needs the key.';
       const hex = firstPage.toString(16).toUpperCase().padStart(2, '0');
-      return `${writeOnly ? 'Writing' : 'Reading and writing'} pages ${firstPage} (0x${hex}) and up needs the key. User memory starts at page 4; the key and settings sit at pages 42 to 47. Turn off “Only protect writes” and phones can no longer read the records without the key.`;
+      return `${writeOnly ? 'Writing' : 'Reading and writing'} pages ${firstPage} (0x${hex}) and up needs the key; user memory starts at page 4. ${writeOnly ? 'Turn off “Only protect writes” to hide the records from phones without the key too.' : 'Phones cannot read the records without the key.'}`;
     };
     return {
       title: 'Ultralight C key',
@@ -818,7 +827,7 @@ const SCREENS = (() => {
           hexField({ label: 'Key', value: current, byteCount: 16, onChange: (b) => { current = b; currentText.querySelector('.value').textContent = asText(b); } }),
           currentText,
           buttonRow({ icon: 'key', title: 'Use default key', onClick: () => { current = new Uint8Array(DEFAULT_KEY); ctx.refresh(); } }),
-        ], footer: 'New Ultralight C tags ship with the key BREAKMEIFYOUCAN!. The key can never be read back from a tag, so keep a copy of any key you set.' }));
+        ], footer: 'New tags use the factory key BREAKMEIFYOUCAN! until it is changed. A tag never gives its key back, so keep a copy of any key you set.' }));
         wrap.append(section({ rows: [buttonRow({ icon: 'checkcircle', title: 'Test key', onClick: async () => {
           if (current.length !== 16) return check('Enter the current 16-byte key.');
           const key = new Uint8Array(current);
@@ -827,7 +836,7 @@ const SCREENS = (() => {
         wrap.append(section({ header: 'New key', rows: [
           hexField({ label: 'Key', value: next, byteCount: 16, onChange: (b) => { next = b; } }),
           buttonRow({ icon: 'sparkle', title: 'Generate random key', onClick: () => { next = crypto.getRandomValues(new Uint8Array(16)); ctx.refresh(); } }),
-        ], footer: '16 bytes. Write the new key down before you set it. Without it, the protected pages are out of reach for good.' }));
+        ], footer: 'Keep a copy of the new 16-byte key before you set it. Without it, the protected pages are out of reach for good.' }));
         const footer = el('div', { class: 'section-footer', text: protectionFooter() });
         wrap.append(section({ header: 'Protection', rows: [
           stepperRow({ title: 'Protect from page', value: firstPage, min: 3, max: 48, onChange: (v) => { firstPage = v; footer.textContent = protectionFooter(); } }),
@@ -891,7 +900,7 @@ const SCREENS = (() => {
         wrap.append(section({ header: 'Master key', rows: [
           hexField({ label: 'Card master key', value: masterKey, onChange: (b) => { masterKey = b; } }),
           buttonRow({ icon: 'key', title: 'Use default key', onClick: () => { masterKey = new Uint8Array(8); ctx.refresh(); } }),
-        ], footer: '8 bytes for DES or 16 bytes for 2K3DES. A new card uses 8 zero bytes. The key is only used to authenticate; it is never changed.' }));
+        ], footer: '8 bytes for DES or 16 for 2K3DES; a new card uses 8 zero bytes. The key is only used to authenticate and is never changed.' }));
         let ndefFooter = 'Creates application 000001 with the NFC Forum name D2760000850101, a capability container file E103 and an NDEF file E104 of the chosen size, so phones see a normal NDEF tag.';
         if (formatFirst) ndefFooter += ' Format first deletes every application on the card before creating it.';
         else if (reading && reading.freeMemory != null) { ndefFooter += ` The card reported ${UI.bytesLabel(reading.freeMemory)} free.`; if (size + 32 > reading.freeMemory) ndefFooter += ' The NDEF file may not fit; choose a smaller size.'; }
@@ -969,7 +978,7 @@ const SCREENS = (() => {
       } }, 'Reads the DSFID, the AFI, the memory size and which blocks are locked.'));
       if (reading) {
         const locked = reading.lockedBlocks.filter(Boolean).length;
-        const family = reading.isSLIX ? ' ICODE SLIX family. Its passwords, privacy and EAS are under ICODE SLIX above.' : reading.isST ? ' ST25TV chip. Its passwords are under ST25TV above.' : '';
+        const family = reading.isSLIX ? ' Passwords, privacy and EAS for this ICODE SLIX are under ICODE SLIX above.' : reading.isST ? ' Passwords for this ST25TV are under ST25TV above.' : '';
         wrap.append(section({ header: 'Tag', rows: [
           row({ title: 'Chip', value: reading.chip, valueWrap: true, accessory: 'none' }),
           row({ title: 'DSFID', value: hex2(reading.dsfid), valueMono: true, accessory: 'none' }),
@@ -988,12 +997,12 @@ const SCREENS = (() => {
         hexField({ label: 'AFI', value: afi, byteCount: 1, onChange: (b) => { afi = b; } }),
         toggleRow({ title: 'Lock the AFI', value: lockAFI, onChange: (v) => { lockAFI = v; } }),
         buttonRow({ icon: 'pencil', title: 'Write AFI', onClick: () => writeByte('AFI', afi, lockAFI, SIM.ops.type5WriteAFI) }),
-      ], footer: 'The application family identifier tells readers what kind of item the tag is on. 00 means any. Locking makes the value permanent.' }));
+      ], footer: 'The application family identifier tells readers what kind of item the tag is on; 00 means any. Locking makes the value permanent.' }));
       wrap.append(section({ header: 'DSFID', rows: [
         hexField({ label: 'DSFID', value: dsfid, byteCount: 1, onChange: (b) => { dsfid = b; } }),
         toggleRow({ title: 'Lock the DSFID', value: lockDSFID, onChange: (v) => { lockDSFID = v; } }),
         buttonRow({ icon: 'pencil', title: 'Write DSFID', onClick: () => writeByte('DSFID', dsfid, lockDSFID, SIM.ops.type5WriteDSFID) }),
-      ], footer: 'The data storage format identifier is one byte that says how the memory is organised. Most readers ignore it. Locking makes the value permanent.' }));
+      ], footer: 'The data storage format identifier says how the memory is organised, and most readers ignore it. Locking makes the value permanent.' }));
       const maxBlock = reading ? reading.totalBlocks - 1 : 255;
       const lockLabel = () => (lockFrom === lockTo ? `Lock block ${lockFrom}` : `Lock blocks ${lockFrom} to ${lockTo}`);
       const lockButton = buttonRow({ icon: 'lock', title: lockLabel(), destructive: true, onClick: async () => {
@@ -1011,7 +1020,7 @@ const SCREENS = (() => {
         stepperRow({ title: 'From block', value: lockFrom, min: 0, max: maxBlock, onChange: (v) => { lockFrom = v; relabel(); } }),
         stepperRow({ title: 'To block', value: lockTo, min: 0, max: maxBlock, onChange: (v) => { lockTo = v; relabel(); } }),
         lockButton,
-      ], footer: "Locked blocks can never be written again, by any reader. Block 0 holds the capability container. Read the settings first so the steppers match the tag's size.", footerClass: 'danger' }));
+      ], footer: "Locked blocks can never be written again, by any reader. Read the settings first so the steppers match the tag's size.", footerClass: 'danger' }));
     }
     function buildSLIX(ctx, wrap) {
       wrap.append(section({ header: 'Passwords', rows: [
@@ -1030,7 +1039,7 @@ const SCREENS = (() => {
           const id = slixId, pwd = new Uint8Array(slixCurrent);
           try { await run('Password accepted.', (s, t) => SIM.ops.slixPresentPassword(s, t, id, pwd)); UI.success(`The tag accepted the ${slixName(id)} password.`); } catch (e) { fail(e); }
         } }),
-      ], footer: 'Each SLIX password is 4 bytes and guards one feature: reading, writing, privacy mode, destroy, or EAS and AFI. Changing a password needs the current one. Present password sends the current password and tells you whether the tag accepts it; the tag stays unlocked only while it has power, which ends with the scan. On the pretend tag every password starts as 00 00 00 00.' }));
+      ], footer: 'Each 4-byte SLIX password guards one feature, and changing it needs the current one. Present password checks the current one and unlocks the tag until the scan ends; on the pretend tag every password starts as 00 00 00 00.' }));
       const privacy = async (on) => {
         if (privacyPassword.length !== 4) return check('Enter the 4-byte privacy password.');
         const pwd = new Uint8Array(privacyPassword);
@@ -1061,14 +1070,14 @@ const SCREENS = (() => {
           if (!await UI.confirm({ title: 'Destroy the tag for good?', message: 'This is the last question. The tag you scan next stops answering every reader, forever.', confirmTitle: 'Destroy tag', destructive: true })) return;
           try { await run('Tag destroyed.', (s, t) => SIM.ops.slixDestroy(s, t, pwd)); UI.success('The tag is destroyed and will not answer again.'); } catch (e) { fail(e); }
         } }),
-      ], footer: 'Destroy switches the tag off forever. It never answers any reader again and nothing can bring it back. In the web preview, Reset simulated tags in Settings brings the pretend tag back.', footerClass: 'danger' }));
+      ], footer: 'Destroy switches the tag off forever, and nothing can bring it back. In the web preview, Reset simulated tags in Settings restores the pretend tag.', footerClass: 'danger' }));
     }
     function buildST(ctx, wrap) {
       wrap.append(section({ header: 'Password', rows: [
         stepperRow({ title: 'Password number', subtitle: '0 guards the configuration, 1 to 3 the memory areas.', value: stNumber, min: 0, max: 3, onChange: (v) => { stNumber = v; } }),
         hexField({ label: 'Current password', value: stCurrent, byteCount: 8, onChange: (b) => { stCurrent = b; } }),
         hexField({ label: 'New password', value: stNew, byteCount: 8, onChange: (b) => { stNew = b; } }),
-      ], footer: "ST25TV passwords are 8 bytes. New chips use 8 zero bytes. Check the chip's datasheet for what each password guards." }));
+      ], footer: "ST25TV passwords are 8 bytes, all zeros on a new chip. The chip's datasheet says what each password guards." }));
       wrap.append(section({ rows: [buttonRow({ icon: 'key', title: 'Present password', onClick: async () => {
         if (stCurrent.length !== 8) return check('Enter the current 8-byte password. New chips use 8 zero bytes.');
         const n = stNumber, pwd = new Uint8Array(stCurrent);
@@ -1113,7 +1122,7 @@ const SCREENS = (() => {
         wrap.append(section({ header: 'Service', rows: [
           hexField({ label: 'Service code', value: service, byteCount: 2, onChange: (b) => { service = b; } }),
           fieldRow({ label: 'Blocks', value: blocksText, placeholder: 'for example 0-13', mono: true, onInput: (v) => { blocksText = v; } }),
-        ], footer: 'Service codes are written most significant byte first. 000B reads the user blocks of a FeliCa Lite-S card and 0009 reads and writes them. List blocks as numbers and ranges, such as 0-13 or 0, 4, 8-9. The pretend FeliCa tag has blocks 0 to 3 in both services.' }));
+        ], footer: 'On a FeliCa Lite-S, service 000B reads the user blocks and 0009 reads and writes them. List blocks as numbers and ranges, such as 0-13 or 0, 4, 8-9.' }));
         wrap.append(scanButton({ title: 'Read blocks', icon: 'search', onClick: async () => {
           if (service.length !== 2) return check('Enter a 2-byte service code, for example 00 0B.');
           const blocks = parseBlockList(blocksText);
@@ -1244,7 +1253,7 @@ const SCREENS = (() => {
     return { title: 'About', build() {
       const wrap = el('div');
       wrap.append(section({ rows: [row({ icon: 'wave', title: 'NFC Editor', subtitle: 'Web preview of version 1.0', accessory: 'none' })] }));
-      wrap.append(section({ rows: [row({ title: 'Reads, writes and edits NFC tags. Every tool that other apps sell as an upgrade is here and free.', subtitleWrap: true, accessory: 'none' })], footer: 'Everything stays on your iPhone. No accounts, no analytics.' }));
+      wrap.append(section({ header: 'What it does', rows: [row({ title: 'NFC Editor reads, writes and edits NFC tags. Scan a tag to see its chip, serial number, memory and records.', subtitleWrap: true, accessory: 'none' })], footer: 'Everything stays on your iPhone. No accounts, no analytics.' }));
       const steps = ['Open Shortcuts and tap Automation.', 'Tap New Automation, or the plus button, and choose NFC.', 'Tap Scan and hold your iPhone near the tag, then name it.', 'Choose Run Immediately if you do not want to be asked each time.', 'Pick the action to run, for example Open URL, Set Focus or an NFC Editor action.'];
       wrap.append(section({ header: 'Automations', rows: [
         row({ icon: 'layers', iconBg: '#5856D6', title: 'Run an action when a tag is scanned', subtitle: 'iOS runs automations on a tag scan from the Shortcuts app, not from other apps. To set one up:', subtitleWrap: true, accessory: 'none' }),
@@ -1253,8 +1262,10 @@ const SCREENS = (() => {
       wrap.append(section({ header: 'Shortcuts actions', rows: [
         row({ icon: 'wave', title: 'Read NFC tag', subtitle: 'Opens the app, scans a tag and returns its records as text, one line per record.', subtitleWrap: true, accessory: 'none' }),
         row({ icon: 'pencil', iconBg: 'var(--green)', title: 'Write profile to tag', subtitle: 'Opens the app and writes a saved profile to the next tag you hold, then checks it.', subtitleWrap: true, accessory: 'none' }),
-      ], footer: 'Find both in the Shortcuts app under NFC Editor, or ask Siri to “Read an NFC tag with NFC Editor”. iOS only lets an app use NFC while it is in front, so both actions open the app and show the scanning sheet. The web preview cannot run them.' }));
-      wrap.append(section({ rows: [row({ title: 'Source on GitHub', blue: true, onClick: () => UI.openURL('https://github.com/katsuma0/nfc-editor'), accessory: 'chevron' })], footer: 'iOS does not let apps read MIFARE Classic data blocks or emulate a tag, so NFC Editor does neither. Core NFC only works while the app is open and in front, and an app cannot start an action on its own when a tag is scanned; use a Shortcuts automation for that.' }));
+      ], footer: 'Find both in the Shortcuts app under NFC Editor, or ask Siri to “Read an NFC tag with NFC Editor”. Both open the app to scan, because iOS only allows NFC in the app in front; the web preview cannot run them.' }));
+      wrap.append(section({ header: 'Limits', rows: [row({ title: 'iOS does not let apps read MIFARE Classic data blocks or emulate a tag, so NFC Editor does neither. An app also cannot start an action on its own when a tag is scanned; use a Shortcuts automation for that.', accessory: 'none' })] }));
+      // A link opens outside the app, so like Link in AboutView it has no chevron.
+      wrap.append(section({ rows: [buttonRow({ icon: 'terminal', title: 'Source code on GitHub', onClick: () => UI.openURL('https://github.com/katsuma0/nfc-editor') })] }));
       return wrap;
     } };
   }

@@ -375,9 +375,12 @@ const UI = (() => {
   function download(name, data, mime) {
     const blob = new Blob([data], { type: mime || 'application/octet-stream' });
     const url = URL.createObjectURL(blob);
-    const a = el('a', { href: url, download: name });
+    const a = el('a', { href: url, download: name, rel: 'noopener', style: 'display:none' });
+    // Safari before 13 ignores the download attribute; opening the Blob URL still lets the viewer save it.
+    if (!('download' in a)) { window.open(url, '_blank'); setTimeout(() => URL.revokeObjectURL(url), 60000); return; }
     document.body.append(a); a.click(); a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 2000);
+    // Safari reads the Blob after the click returns, sometimes after a save prompt, so the URL has to outlive it.
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
   }
   function openURL(url) { window.open(url, '_blank', 'noopener'); }
 

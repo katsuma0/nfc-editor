@@ -2,7 +2,7 @@
 const STORE = (() => {
   const read = (k, fallback) => { try { const v = JSON.parse(localStorage.getItem(k)); return v == null ? fallback : v; } catch (e) { return fallback; } };
   const write = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* private mode or full */ } };
-  const uuid = () => (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random().toString(16).slice(2));
+  const uuid = NDEF.uuid;
 
   const settings = Object.assign({ hapticsEnabled: true, verifyAfterWrite: true, defaultLanguage: 'en', readFullMemoryOnScan: true, keepScreenAwake: false, simulatedTag: 'ntag216-blank', commandHistory: [] }, read('nfce.settings', {}));
   const saveSettings = () => write('nfce.settings', settings);
