@@ -141,6 +141,18 @@ public protocol NFCISO15693Tag: NFCNDEFTag {
     func writeSingleBlock(requestFlags: NFCISO15693RequestFlag, blockNumber: UInt8, dataBlock: Data) async throws
     func lockBlock(requestFlags: NFCISO15693RequestFlag, blockNumber: UInt8) async throws
     func customCommand(requestFlags: NFCISO15693RequestFlag, customCommandCode: Int, customRequestParameters: Data) async throws -> Data
+    func extendedReadSingleBlock(requestFlags: NFCISO15693RequestFlag, blockNumber: Int) async throws -> Data
+    func extendedReadMultipleBlocks(requestFlags: NFCISO15693RequestFlag, blockRange: NSRange) async throws -> [Data]
+    func extendedWriteSingleBlock(requestFlags: NFCISO15693RequestFlag, blockNumber: Int, dataBlock: Data) async throws
+    func extendedLockBlock(requestFlags: NFCISO15693RequestFlag, blockNumber: Int) async throws
+    func getMultipleBlockSecurityStatus(requestFlags: NFCISO15693RequestFlag, blockRange: NSRange) async throws -> [NSNumber]
+    func writeAFI(requestFlags: NFCISO15693RequestFlag, afi: UInt8) async throws
+    func lockAFI(requestFlags: NFCISO15693RequestFlag) async throws
+    func writeDSFID(requestFlags: NFCISO15693RequestFlag, dsfid: UInt8) async throws
+    func lockDFSID(requestFlags: NFCISO15693RequestFlag) async throws
+    func stayQuiet() async throws
+    func select(requestFlags: NFCISO15693RequestFlag) async throws
+    func resetToReady(requestFlags: NFCISO15693RequestFlag) async throws
 }
 
 public protocol NFCFeliCaTag: NFCNDEFTag {
@@ -150,6 +162,9 @@ public protocol NFCFeliCaTag: NFCNDEFTag {
     func requestSystemCode() async throws -> [Data]
     func sendFeliCaCommand(commandPacket: Data) async throws -> Data
     func readWithoutEncryption(serviceCodeList: [Data], blockList: [Data]) async throws -> (Int, Int, [Data])
+    func writeWithoutEncryption(serviceCodeList: [Data], blockList: [Data], blockData: [Data]) async throws -> (Int, Int)
+    func requestService(nodeCodeList: [Data]) async throws -> [Data]
+    func requestResponse() async throws -> Int
 }
 
 public enum NFCTag {
@@ -187,4 +202,5 @@ public final class NFCTagReaderSession: NFCReaderSession {
     public init?(pollingOption: PollingOption, delegate: any NFCTagReaderSessionDelegate, queue: DispatchQueue?) { super.init() }
     public func restartPolling() {}
     public func connect(to tag: NFCTag) async throws {}
+    public var sessionQueue: DispatchQueue { DispatchQueue.main }
 }
