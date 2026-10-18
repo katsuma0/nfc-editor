@@ -15,7 +15,7 @@ struct LockPagesToolView: View {
     var body: some View {
         Form {
             Section {
-                ScanButton("Read lock state", systemImage: "magnifyingglass") {
+                ScanButton("Read lock state") {
                     readState()
                 }
             } footer: {
@@ -124,7 +124,7 @@ struct LockPagesToolView: View {
 
     private var lockSection: some View {
         Section {
-            ScanButton("Lock selected pages", systemImage: "lock.fill", role: .destructive) {
+            ScanButton("Lock selected pages", role: .destructive) {
                 confirmLock()
             }
             .disabled(selected.isEmpty)

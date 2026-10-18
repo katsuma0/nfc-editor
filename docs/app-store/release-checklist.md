@@ -5,8 +5,8 @@
 3. Replace the app icon if you want. It is the single 1024 x 1024 PNG in `NFCEditor/Assets.xcassets/AppIcon.appiconset/`. Xcode makes every size from it.
 4. Bump MARKETING_VERSION and CURRENT_PROJECT_VERSION in the target build settings for each upload.
 5. Product, Archive. Distribute App, App Store Connect, Upload.
-6. In App Store Connect, create the app with the bundle identifier, then paste in `listing.md`. Screenshots: 6.9 inch display is the only required set (iPhone 16 Pro Max or 17 Pro Max). Take them from the Read details screen, the Write screen with three records, the memory editor, and the Tools list. Six is plenty.
-7. App Privacy: Data Not Collected. Age rating: 4+. Privacy policy URL: the hosted copy of `privacy-policy.md`.
+6. In App Store Connect, create the app with the bundle identifier, then paste in `listing.md`. Screenshots: 6.9 inch display is the only required set (iPhone 16 Pro Max or 17 Pro Max). Take them from the Read details screen, the Write screen with three records, the memory editor, and the Tools list with advanced tools shown. Six is plenty. Charge to 100 percent first so the status bar looks clean.
+7. App Privacy: Data Not Collected. Age rating: 4+. Privacy policy URL: https://katsuma.ca/nfc-editor/privacy.html. `NFCEditor/PrivacyInfo.xcprivacy` already declares the one required-reason API the app uses (UserDefaults).
 8. Paste `review-notes.md` into App Review Information.
 9. Submit. First reviews of NFC apps usually take two to four days because the reviewer has to find a tag.
 

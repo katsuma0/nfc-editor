@@ -359,7 +359,7 @@ enum TagOperations {
                 queried = try await queryStatus(ndef)
             }
             if queried.0 == .notSupported {
-                throw NFCEditorError.notNDEFFormatted
+                throw notFormatted(tag)
             }
         }
         if queried.0 == .readOnly {
@@ -425,11 +425,19 @@ enum TagOperations {
             try await layoutISO15693(session, iso15693, writeCapabilityContainer: false)
         default:
             if status == .notSupported {
-                throw NFCEditorError.notNDEFFormatted
+                throw notFormatted(tag)
             }
             session.alertMessage = "Erasing."
             try await writeMessage(ndef, [NDEFRecord.empty])
         }
+    }
+
+    /// A blank DESFire card needs an NDEF application rather than a format, so it gets its own message.
+    private static func notFormatted(_ tag: NFCTag) -> NFCEditorError {
+        if case .miFare(let mifare) = tag, mifare.mifareFamily == .desfire {
+            return .noNDEFApplication
+        }
+        return .notNDEFFormatted
     }
 
     static func lock(_ session: NFCTagReaderSession, _ tag: NFCTag) async throws {
@@ -437,7 +445,7 @@ enum TagOperations {
         session.alertMessage = "Checking the tag."
         let (status, _) = try await queryStatus(ndef)
         if status == .notSupported {
-            throw NFCEditorError.notNDEFFormatted
+            throw notFormatted(tag)
         }
         if status == .readOnly {
             throw NFCEditorError.readOnly

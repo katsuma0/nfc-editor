@@ -21,7 +21,7 @@ struct DESFireToolView: View {
     var body: some View {
         Form {
             Section {
-                ScanButton("Read card", systemImage: "magnifyingglass") {
+                ScanButton("Read card") {
                     readCard()
                 }
             } footer: {
@@ -172,7 +172,7 @@ struct DESFireToolView: View {
         }
 
         Section {
-            ScanButton("Create NDEF application", systemImage: "plus.rectangle.on.rectangle") {
+            ScanButton("Create NDEF application") {
                 confirmCreate()
             }
         } footer: {
@@ -184,7 +184,7 @@ struct DESFireToolView: View {
 
     private var formatSection: some View {
         Section {
-            ScanButton("Format card", systemImage: "trash", role: .destructive) {
+            ScanButton("Format card", role: .destructive) {
                 confirmFormat()
             }
         } header: {

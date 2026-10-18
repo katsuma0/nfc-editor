@@ -9,6 +9,7 @@ enum NFCEditorError: LocalizedError, Equatable {
     case multipleTags
     case unsupportedTag(String)
     case notNDEFFormatted
+    case noNDEFApplication
     case readOnly
     case capacityExceeded(needed: Int, capacity: Int)
     case nak(UInt8?)
@@ -33,7 +34,10 @@ enum NFCEditorError: LocalizedError, Equatable {
         case .unsupportedTag(let reason):
             return "This tag is not supported. " + NFCEditorError.sentence(reason)
         case .notNDEFFormatted:
-            return "This tag is not NDEF formatted. Use Format memory in Tools first."
+            return "This tag is not set up for writing yet. Use Format tag in Tools first."
+        case .noNDEFApplication:
+            // Format tag cannot help a DESFire card, so point at the tool that can.
+            return "This card has no NDEF application. In Tools, tap Show advanced tools, then use DESFire card to create one."
         case .readOnly:
             return "This tag is read only."
         case .capacityExceeded(let needed, let capacity):

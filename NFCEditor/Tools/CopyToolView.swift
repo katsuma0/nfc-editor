@@ -90,7 +90,7 @@ struct CopyToolView: View {
         }
 
         Section {
-            ScanButton("Write to destination tag", systemImage: "square.and.pencil") {
+            ScanButton("Write to destination tag") {
                 writeDestination(source)
             }
         } footer: {

@@ -1,19 +1,24 @@
 import Foundation
 import SwiftUI
 
-/// Tools tab: one row per tag utility, grouped by the chips each tool talks to.
+/// Tools tab: the everyday tools first, then the chip-specific ones behind Show advanced tools.
 @MainActor
 struct ToolsView: View {
+    @Environment(AppState.self) private var app
     @State private var showingSettings = false
 
     var body: some View {
         NavigationStack {
             List {
-                anyTagSection
-                ntagSection
-                desfireSection
-                iso15693Section
-                feliCaSection
+                everydaySection
+                advancedToggleSection
+                if app.settings.showAdvancedTools {
+                    memorySection
+                    ntagSection
+                    desfireSection
+                    iso15693Section
+                    feliCaSection
+                }
             }
             .listStyle(.insetGrouped)
             .navigationTitle("Tools")
@@ -34,7 +39,7 @@ struct ToolsView: View {
 
     // MARK: Sections
 
-    private var anyTagSection: some View {
+    private var everydaySection: some View {
         Section {
             NavigationLink {
                 EraseToolView()
@@ -47,19 +52,50 @@ struct ToolsView: View {
                 ToolRow(title: "Copy tag", description: "Read one tag and write it to another.", systemImage: "doc.on.doc")
             }
             NavigationLink {
+                PasswordToolView()
+            } label: {
+                ToolRow(title: "Password", description: "Protect a tag with a password, or remove one.", systemImage: "key")
+            }
+            NavigationLink {
                 LockToolView()
             } label: {
                 ToolRow(title: "Lock tag", description: "Make a tag read only for good.", systemImage: "lock")
             }
             NavigationLink {
+                FormatToolView()
+            } label: {
+                ToolRow(title: "Format tag", description: "Prepare a blank or damaged tag for writing.", systemImage: "arrow.triangle.2.circlepath")
+            }
+            NavigationLink {
+                SignatureToolView()
+            } label: {
+                ToolRow(title: "Check if genuine", description: "Read the NXP signature to spot a cloned chip.", systemImage: "checkmark.seal")
+            }
+        }
+    }
+
+    private var advancedToggleSection: some View {
+        Section {
+            Button {
+                withAnimation {
+                    app.settings.showAdvancedTools.toggle()
+                }
+            } label: {
+                Text(app.settings.showAdvancedTools ? "Hide advanced tools" : "Show advanced tools")
+            }
+        } footer: {
+            if !app.settings.showAdvancedTools {
+                Text("Memory editor, raw commands, dumps, counters, mirroring, page locks, and tools for DESFire, ISO 15693 and FeliCa chips.")
+            }
+        }
+    }
+
+    private var memorySection: some View {
+        Section {
+            NavigationLink {
                 MemoryEditorView()
             } label: {
                 ToolRow(title: "Memory editor", description: "Read and edit memory page by page.", systemImage: "memorychip")
-            }
-            NavigationLink {
-                FormatToolView()
-            } label: {
-                ToolRow(title: "Format memory", description: "Prepare a blank or damaged tag for NDEF.", systemImage: "arrow.triangle.2.circlepath")
             }
             NavigationLink {
                 WriteDumpView()
@@ -72,17 +108,12 @@ struct ToolsView: View {
                 ToolRow(title: "Advanced commands", description: "Send raw commands to the chip.", systemImage: "terminal")
             }
         } header: {
-            Text("Any tag")
+            Text("Memory")
         }
     }
 
     private var ntagSection: some View {
         Section {
-            NavigationLink {
-                PasswordToolView()
-            } label: {
-                ToolRow(title: "Password", description: "Protect a tag with a password, or remove one.", systemImage: "key")
-            }
             NavigationLink {
                 CounterToolView()
             } label: {
@@ -97,11 +128,6 @@ struct ToolsView: View {
                 LockPagesToolView()
             } label: {
                 ToolRow(title: "Lock pages", description: "See which pages are locked and lock chosen ones.", systemImage: "lock.rectangle.stack")
-            }
-            NavigationLink {
-                SignatureToolView()
-            } label: {
-                ToolRow(title: "Signature", description: "Check that the chip is a genuine NXP chip.", systemImage: "checkmark.seal")
             }
             NavigationLink {
                 UltralightCToolView()

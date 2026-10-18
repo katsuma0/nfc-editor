@@ -22,7 +22,7 @@ const SIM = (() => {
     timeout: () => new NFCError('timeout', 'The session timed out. Try again.'),
     tagLost: () => new NFCError('tagLost', 'The tag was lost. Hold it steady and try again.'),
     unsupportedTag: (r) => new NFCError('unsupportedTag', 'This tag is not supported. ' + r),
-    notNDEFFormatted: () => new NFCError('notNDEFFormatted', 'This tag is not NDEF formatted. Use Format memory in Tools first.'),
+    notNDEFFormatted: () => new NFCError('notNDEFFormatted', 'This tag is not set up for writing yet. Use Format tag in Tools first.'),
     readOnly: () => new NFCError('readOnly', 'This tag is read only.'),
     capacity: (n, c) => new NFCError('capacityExceeded', `The data needs ${n} bytes but the tag holds ${c} bytes.`),
     nak: (code) => new NFCError('nak', code == null ? 'The tag refused the command.' : `The tag refused the command (NAK 0x${code.toString(16).toUpperCase().padStart(2, '0')}).`),
@@ -37,8 +37,8 @@ const SIM = (() => {
     passwordNeeded: (tag) => new NFCError('commandFailed', tag && tag.isUlC
       ? 'This tag is protected with a 3DES key. Remove the protection with Ultralight C key in Tools first.'
       : 'This tag is password protected. Enter its password in a tool that asks for one, or remove it with the Password tool.'),
-    // Format memory cannot help a DESFire card, so point at the tool that can.
-    noNDEFApplication: () => new NFCError('notNDEFFormatted', 'This card has no NDEF application. Create one with DESFire card in Tools first.'),
+    // Format tag cannot help a DESFire card, so point at the tool that can.
+    noNDEFApplication: () => new NFCError('notNDEFFormatted', 'This card has no NDEF application. In Tools, tap Show advanced tools, then use DESFire card to create one.'),
     configLocked: (what) => new NFCError('commandFailed', `The configuration of this tag is locked for good, so ${what} can no longer change.`),
   };
   const pagesWritten = (n) => (n === 0 ? 'No pages were written.' : n === 1 ? '1 page was written before that.' : `${n} pages were written before that.`);

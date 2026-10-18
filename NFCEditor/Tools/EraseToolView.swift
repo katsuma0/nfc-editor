@@ -21,7 +21,7 @@ struct EraseToolView: View {
             }
 
             Section {
-                ScanButton("Erase tag", systemImage: "trash", role: .destructive) {
+                ScanButton("Erase tag", role: .destructive) {
                     showingConfirmation = true
                 }
             } footer: {

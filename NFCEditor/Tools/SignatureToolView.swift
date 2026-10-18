@@ -59,7 +59,7 @@ struct SignatureToolView: View {
                 }
             }
         }
-        .navigationTitle("Signature")
+        .navigationTitle("Check if genuine")
         .navigationBarTitleDisplayMode(.inline)
         .alertItem($alert)
     }

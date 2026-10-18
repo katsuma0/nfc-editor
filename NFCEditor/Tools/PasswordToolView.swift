@@ -194,7 +194,7 @@ struct PasswordToolView: View {
         }
 
         Section {
-            ScanButton("Lock configuration", systemImage: "lock.fill", role: .destructive) {
+            ScanButton("Lock configuration", role: .destructive) {
                 confirmLockConfiguration()
             }
         } footer: {

@@ -48,7 +48,7 @@ struct LockToolView: View {
             }
 
             Section {
-                ScanButton(buttonTitle, systemImage: "lock.fill", role: .destructive) {
+                ScanButton(buttonTitle, role: .destructive) {
                     showingConfirmation = true
                 }
                 .disabled(!acknowledged)
