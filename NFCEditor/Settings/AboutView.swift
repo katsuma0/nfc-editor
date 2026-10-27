@@ -2,7 +2,8 @@ import Foundation
 import SwiftUI
 
 struct AboutView: View {
-    private static let repositoryURL = URL(string: "https://github.com/katsuma0/nfc-editor")
+    private static let privacyURL = URL(string: "https://katsuma.ca/nfc-editor/privacy.html")
+    private static let supportURL = URL(string: "https://katsuma.ca/nfc-editor/support.html")
     private static let shortcutsURL = URL(string: "shortcuts://")
 
     var body: some View {
@@ -12,6 +13,7 @@ struct AboutView: View {
                     Image(systemName: "wave.3.right.circle.fill")
                         .font(.system(size: 56))
                         .foregroundStyle(Color.accentColor)
+                        .accessibilityHidden(true)
                     Text("NFC Editor")
                         .font(.title2.weight(.semibold))
                     Text("Version \(versionLine)")
@@ -80,9 +82,14 @@ struct AboutView: View {
             }
 
             Section {
-                if let url = AboutView.repositoryURL {
+                if let url = AboutView.supportURL {
                     Link(destination: url) {
-                        Label("Source code on GitHub", systemImage: "chevron.left.forwardslash.chevron.right")
+                        Label("Help and support", systemImage: "questionmark.circle")
+                    }
+                }
+                if let url = AboutView.privacyURL {
+                    Link(destination: url) {
+                        Label("Privacy policy", systemImage: "hand.raised")
                     }
                 }
             }

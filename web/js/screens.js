@@ -372,7 +372,7 @@ const SCREENS = (() => {
         const toolRow = ([id, title, subtitle, icon, make]) => row({ icon, iconBg: iconColorFor(id), title, subtitle, subtitleWrap: true, onClick: () => ctx.nav.push(make()) });
         const s = STORE.settings;
         wrap.append(section({ rows: EVERYDAY_TOOLS.map(toolRow) }));
-        wrap.append(section({ rows: [buttonRow({ title: s.showAdvancedTools ? 'Hide advanced tools' : 'Show advanced tools', onClick: () => { s.showAdvancedTools = !s.showAdvancedTools; STORE.saveSettings(); ctx.refresh(); } })], footer: s.showAdvancedTools ? null : 'Memory editor, raw commands, dumps, counters, mirroring, page locks, and tools for DESFire, ISO 15693 and FeliCa chips.' }));
+        wrap.append(section({ rows: [buttonRow({ title: s.showAdvancedTools ? 'Hide advanced tools' : 'Show advanced tools', onClick: () => { s.showAdvancedTools = !s.showAdvancedTools; STORE.saveSettings(); ctx.refresh(); } })], footer: s.showAdvancedTools ? null : 'Memory editor, raw commands, dumps, counters, mirroring, page locks, and tools for Ultralight C, DESFire, ISO 15693 and FeliCa chips.' }));
         if (s.showAdvancedTools) for (const g of TOOL_GROUPS) wrap.append(section({ header: g.header, rows: g.tools.map(toolRow), footer: g.footer }));
         return wrap;
       },
@@ -1237,6 +1237,7 @@ const SCREENS = (() => {
       const s = STORE.settings;
       const wrap = el('div');
       wrap.append(section({ rows: [
+        selectRow({ title: 'Appearance', value: s.appearance, options: [{ value: 'system', label: 'System' }, { value: 'light', label: 'Light' }, { value: 'dark', label: 'Dark' }], onChange: (v) => { s.appearance = v; STORE.saveSettings(); UI.applyAppearance(v); } }),
         toggleRow({ title: 'Verify after write', value: s.verifyAfterWrite, onChange: (v) => { s.verifyAfterWrite = v; STORE.queue.options.verifyAfterWrite = v; STORE.saveSettings(); STORE.saveQueue(); } }),
         toggleRow({ title: 'Haptic feedback', value: s.hapticsEnabled, onChange: (v) => { s.hapticsEnabled = v; STORE.saveSettings(); } }),
         toggleRow({ title: 'Keep screen awake', value: s.keepScreenAwake, onChange: (v) => { s.keepScreenAwake = v; STORE.saveSettings(); UI.applyWakeLock && UI.applyWakeLock(v); } }),
@@ -1244,7 +1245,7 @@ const SCREENS = (() => {
       const n = STORE.scans.history.length;
       wrap.append(section({ header: 'Scan history', rows: [
         buttonRow({ icon: 'table', title: 'Export scan log', disabled: !n, onClick: () => UI.download('NFC scan log.csv', STORE.exportScanLogCSV(), 'text/csv') }),
-        buttonRow({ icon: 'trash', title: 'Clear scan history', destructive: true, disabled: !n, onClick: async () => { if (await UI.confirm({ title: 'Clear the scan history?', confirmTitle: 'Clear scan history', destructive: true })) { STORE.clearScans(); ctx.refresh(); } } }),
+        buttonRow({ icon: 'trash', title: 'Clear scan history', destructive: true, disabled: !n, onClick: async () => { if (await UI.confirm({ title: 'Clear the scan history?', confirmTitle: 'Clear scan history', destructive: true })) { STORE.clearScans(); ctx.refresh(); if (app.navs.read) app.navs.read.refreshTop(); } } }),
       ], footer: n === 0 ? 'No scans yet. The last 20 scans are kept until you close the app. Saved tags are not affected.' : `${n === 1 ? '1 scan' : n + ' scans'}. Exports as a spreadsheet with serial number, chip, record count and time.` }));
       wrap.append(section({ rows: [buttonRow({ title: s.showAdvancedSettings ? 'Hide advanced settings' : 'Show advanced settings', onClick: () => { s.showAdvancedSettings = !s.showAdvancedSettings; STORE.saveSettings(); ctx.refresh(); } })] }));
       if (s.showAdvancedSettings) {
@@ -1280,7 +1281,10 @@ const SCREENS = (() => {
       ], footer: 'Find both in the Shortcuts app under NFC Editor, or ask Siri to “Read an NFC tag with NFC Editor”. Both open the app to scan, because iOS only allows NFC in the app in front; the web preview cannot run them.' }));
       wrap.append(section({ header: 'Limits', rows: [row({ title: 'iOS does not let apps read MIFARE Classic data blocks or emulate a tag, so NFC Editor does neither. An app also cannot start an action on its own when a tag is scanned; use a Shortcuts automation for that.', accessory: 'none' })] }));
       // A link opens outside the app, so like Link in AboutView it has no chevron.
-      wrap.append(section({ rows: [buttonRow({ icon: 'terminal', title: 'Source code on GitHub', onClick: () => UI.openURL('https://github.com/katsuma0/nfc-editor') })] }));
+      wrap.append(section({ rows: [
+        buttonRow({ icon: 'info', title: 'Help and support', onClick: () => UI.openURL('support.html') }),
+        buttonRow({ icon: 'lock', title: 'Privacy policy', onClick: () => UI.openURL('privacy.html') }),
+      ] }));
       return wrap;
     } };
   }
