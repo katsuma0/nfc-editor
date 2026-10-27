@@ -1,6 +1,21 @@
 import Foundation
 import Observation
 
+/// Light, dark, or whatever the iPhone is set to.
+enum AppAppearance: String, CaseIterable, Identifiable {
+    case system, light, dark
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .system: return "System"
+        case .light: return "Light"
+        case .dark: return "Dark"
+        }
+    }
+}
+
 @MainActor @Observable
 final class AppSettings {
     @ObservationIgnored private let defaults = UserDefaults.standard
@@ -25,6 +40,10 @@ final class AppSettings {
         didSet { defaults.set(keepScreenAwake, forKey: Keys.keepScreenAwake) }
     }
 
+    var appearance: AppAppearance {
+        didSet { defaults.set(appearance.rawValue, forKey: Keys.appearance) }
+    }
+
     /// Settings and Tools start with only the everyday choices; the rest sit behind a Show advanced button.
     var showAdvancedSettings: Bool {
         didSet { defaults.set(showAdvancedSettings, forKey: Keys.showAdvancedSettings) }
@@ -47,6 +66,7 @@ final class AppSettings {
         defaultLanguage = language.isEmpty ? "en" : language
         readFullMemoryOnScan = stored.object(forKey: Keys.readFullMemoryOnScan) as? Bool ?? true
         keepScreenAwake = stored.bool(forKey: Keys.keepScreenAwake)
+        appearance = AppAppearance(rawValue: stored.string(forKey: Keys.appearance) ?? "") ?? .system
         showAdvancedSettings = stored.bool(forKey: Keys.showAdvancedSettings)
         showAdvancedTools = stored.bool(forKey: Keys.showAdvancedTools)
         let history = stored.stringArray(forKey: Keys.commandHistory) ?? []
@@ -79,5 +99,6 @@ final class AppSettings {
         static let commandHistory = "settings.commandHistory"
         static let showAdvancedSettings = "settings.showAdvancedSettings"
         static let showAdvancedTools = "settings.showAdvancedTools"
+        static let appearance = "settings.appearance"
     }
 }

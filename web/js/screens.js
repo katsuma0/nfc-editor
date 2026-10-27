@@ -1237,6 +1237,7 @@ const SCREENS = (() => {
       const s = STORE.settings;
       const wrap = el('div');
       wrap.append(section({ rows: [
+        selectRow({ title: 'Appearance', value: s.appearance, options: [{ value: 'system', label: 'System' }, { value: 'light', label: 'Light' }, { value: 'dark', label: 'Dark' }], onChange: (v) => { s.appearance = v; STORE.saveSettings(); UI.applyAppearance(v); } }),
         toggleRow({ title: 'Verify after write', value: s.verifyAfterWrite, onChange: (v) => { s.verifyAfterWrite = v; STORE.queue.options.verifyAfterWrite = v; STORE.saveSettings(); STORE.saveQueue(); } }),
         toggleRow({ title: 'Haptic feedback', value: s.hapticsEnabled, onChange: (v) => { s.hapticsEnabled = v; STORE.saveSettings(); } }),
         toggleRow({ title: 'Keep screen awake', value: s.keepScreenAwake, onChange: (v) => { s.keepScreenAwake = v; STORE.saveSettings(); UI.applyWakeLock && UI.applyWakeLock(v); } }),
@@ -1280,7 +1281,10 @@ const SCREENS = (() => {
       ], footer: 'Find both in the Shortcuts app under NFC Editor, or ask Siri to “Read an NFC tag with NFC Editor”. Both open the app to scan, because iOS only allows NFC in the app in front; the web preview cannot run them.' }));
       wrap.append(section({ header: 'Limits', rows: [row({ title: 'iOS does not let apps read MIFARE Classic data blocks or emulate a tag, so NFC Editor does neither. An app also cannot start an action on its own when a tag is scanned; use a Shortcuts automation for that.', accessory: 'none' })] }));
       // A link opens outside the app, so like Link in AboutView it has no chevron.
-      wrap.append(section({ rows: [buttonRow({ icon: 'terminal', title: 'Source code on GitHub', onClick: () => UI.openURL('https://github.com/katsuma0/nfc-editor') })] }));
+      wrap.append(section({ rows: [
+        buttonRow({ icon: 'info', title: 'Help and support', onClick: () => UI.openURL('support.html') }),
+        buttonRow({ icon: 'lock', title: 'Privacy policy', onClick: () => UI.openURL('privacy.html') }),
+      ] }));
       return wrap;
     } };
   }

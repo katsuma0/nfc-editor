@@ -14,6 +14,11 @@ struct SettingsView: View {
         NavigationStack {
             Form {
                 Section {
+                    Picker("Appearance", selection: $settings.appearance) {
+                        ForEach(AppAppearance.allCases) { option in
+                            Text(option.title).tag(option)
+                        }
+                    }
                     Toggle("Verify after write", isOn: $settings.verifyAfterWrite)
                     Toggle("Haptic feedback", isOn: $settings.hapticsEnabled)
                     Toggle("Keep screen awake", isOn: $settings.keepScreenAwake)

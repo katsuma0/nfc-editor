@@ -4,7 +4,7 @@ const STORE = (() => {
   const write = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* private mode or full */ } };
   const uuid = NDEF.uuid;
 
-  const settings = Object.assign({ hapticsEnabled: true, verifyAfterWrite: true, defaultLanguage: 'en', readFullMemoryOnScan: true, keepScreenAwake: false, simulatedTag: 'ntag216-blank', commandHistory: [], showAdvancedSettings: false, showAdvancedTools: false }, read('nfce.settings', {}));
+  const settings = Object.assign({ hapticsEnabled: true, verifyAfterWrite: true, defaultLanguage: 'en', readFullMemoryOnScan: true, keepScreenAwake: false, simulatedTag: 'ntag216-blank', commandHistory: [], showAdvancedSettings: false, showAdvancedTools: false, appearance: 'system' }, read('nfce.settings', {}));
   const saveSettings = () => write('nfce.settings', settings);
   const addCommandToHistory = (hex) => { const h = hex.trim().toUpperCase(); if (!h) return; settings.commandHistory = [h, ...settings.commandHistory.filter((x) => x !== h)].slice(0, 50); saveSettings(); };
   const clearCommandHistory = () => { settings.commandHistory = []; saveSettings(); };

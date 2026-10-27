@@ -37,6 +37,12 @@
     try { if (on && navigator.wakeLock) lock = await navigator.wakeLock.request('screen'); else if (!on && lock) { await lock.release(); lock = null; } } catch (e) { /* not available */ }
   };
   if (STORE.settings.keepScreenAwake) UI.applyWakeLock(true);
+  // Light or Dark pins the theme; System leaves it to prefers-color-scheme, like the app's Appearance setting.
+  UI.applyAppearance = (mode) => {
+    if (mode === 'light' || mode === 'dark') document.documentElement.dataset.theme = mode;
+    else delete document.documentElement.dataset.theme;
+  };
+  UI.applyAppearance(STORE.settings.appearance);
   // Browsers drop the lock whenever the page is hidden, so take it again when the page comes back.
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && STORE.settings.keepScreenAwake) UI.applyWakeLock(true); });
 })();

@@ -24,6 +24,10 @@ struct RootView: View {
         .onAppear {
             Haptics.enabled = app.settings.hapticsEnabled
             applyScreenAwake(app.settings.keepScreenAwake)
+            applyAppearance(app.settings.appearance)
+        }
+        .onChange(of: app.settings.appearance) { _, newValue in
+            applyAppearance(newValue)
         }
         .onChange(of: app.settings.hapticsEnabled) { _, newValue in
             Haptics.enabled = newValue
@@ -33,8 +37,29 @@ struct RootView: View {
         }
     }
 
+    /// Set on the window rather than with preferredColorScheme so every sheet and alert follows it too.
+    @MainActor
+    private func applyAppearance(_ appearance: AppAppearance) {
+        let windows = UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .flatMap { $0.windows }
+        for window in windows {
+            window.overrideUserInterfaceStyle = appearance.interfaceStyle
+        }
+    }
+
     @MainActor
     private func applyScreenAwake(_ enabled: Bool) {
         UIApplication.shared.isIdleTimerDisabled = enabled
+    }
+}
+
+extension AppAppearance {
+    var interfaceStyle: UIUserInterfaceStyle {
+        switch self {
+        case .system: return .unspecified
+        case .light: return .light
+        case .dark: return .dark
+        }
     }
 }

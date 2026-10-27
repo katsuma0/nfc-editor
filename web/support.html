@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>NFC Editor support</title>
+  <link rel="icon" href="img/favicon.png" type="image/png">
+  <style>
+    :root { --bg: #ffffff; --fg: #1c1c1e; --muted: #6e6e73; --link: #0a64d6; }
+    @media (prefers-color-scheme: dark) { :root { --bg: #000000; --fg: #f2f2f7; --muted: #a1a1a6; --link: #4c9bff; } }
+    body { margin: 0; background: var(--bg); color: var(--fg); font: 17px/1.5 -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif; }
+    main { max-width: 640px; margin: 0 auto; padding: 48px 16px 64px; }
+    h1 { font-size: 28px; line-height: 1.2; margin: 0 0 24px; }
+    h2 { font-size: 19px; margin: 32px 0 4px; }
+    p { margin: 0 0 12px; }
+    a { color: var(--link); }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>NFC Editor support</h1>
+    <p>Something not working, or a tag the app doesn't understand? <a href="https://github.com/katsuma0/nfc-editor/issues">Open an issue</a> with the chip name from the Read screen and what you tried. I read every one.</p>
+
+    <h2>The scan sheet never finds the tag</h2>
+    <p>Hold the tag flat against the top edge of the iPhone, near the camera, and keep it still for a second. Phone cases with metal or a magnetic wallet block NFC. iPhone 7 or newer is required.</p>
+
+    <h2>It says the tag is not set up for writing</h2>
+    <p>Blank tags sometimes ship empty. Use Format tag in Tools, then write again. A DESFire card needs an NDEF application instead: tap Show advanced tools, then DESFire card.</p>
+
+    <h2>It says the tag is password protected</h2>
+    <p>Someone set a password on it. Use Password in Tools with the right password to remove it. Without the password the tag can be read but not changed.</p>
+
+    <h2>Can it read MIFARE Classic, bank cards or passports?</h2>
+    <p>No. iOS does not let apps read MIFARE Classic data, and reading other people's payment cards and documents is not what this app is for.</p>
+
+    <h2>I locked a tag by mistake</h2>
+    <p>Locking is permanent on every chip. Nothing can undo it, which is why the app asks twice.</p>
+
+    <p><a href="privacy.html">Privacy policy</a></p>
+  </main>
+</body>
+</html>
