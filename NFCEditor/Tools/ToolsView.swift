@@ -85,7 +85,7 @@ struct ToolsView: View {
             }
         } footer: {
             if !app.settings.showAdvancedTools {
-                Text("Memory editor, raw commands, dumps, counters, mirroring, page locks, and tools for DESFire, ISO 15693 and FeliCa chips.")
+                Text("Memory editor, raw commands, dumps, counters, mirroring, page locks, and tools for Ultralight C, DESFire, ISO 15693 and FeliCa chips.")
             }
         }
     }

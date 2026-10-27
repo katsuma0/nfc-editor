@@ -300,26 +300,56 @@ private struct PageRow: View {
     let warning: String?
     let locked: Bool?
 
+    private var indexText: some View {
+        Text(indexLabel)
+            .foregroundStyle(.secondary)
+            .fixedSize()
+    }
+
+    private var hexText: some View {
+        Text(hexLabel)
+            .foregroundStyle(page.readable ? Color.primary : Color.red)
+    }
+
+    private var asciiText: some View {
+        Text(asciiLabel)
+            .foregroundStyle(.secondary)
+    }
+
+    @ViewBuilder
+    private var lockMarker: some View {
+        if locked == true {
+            Spacer(minLength: 8)
+            Image(systemName: "lock.fill")
+                .font(.caption)
+                .foregroundStyle(.orange)
+                .accessibilityLabel("Locked")
+        }
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
-            HStack(spacing: 0) {
-                Text(indexLabel)
-                    .foregroundStyle(.secondary)
-                Text("  " + hexLabel)
-                    .foregroundStyle(page.readable ? Color.primary : Color.red)
-                Text("  " + asciiLabel)
-                    .foregroundStyle(.secondary)
-                if locked == true {
-                    Spacer(minLength: 8)
-                    Image(systemName: "lock.fill")
-                        .font(.caption)
-                        .foregroundStyle(.orange)
-                        .accessibilityLabel("Locked")
+            // One line when it fits; otherwise the ASCII drops to a second line so no byte is ever cut off.
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 0) {
+                    indexText
+                    Text("  ")
+                    hexText
+                    Text("  ")
+                    asciiText
+                    lockMarker
+                }
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(alignment: .firstTextBaseline, spacing: 0) {
+                        indexText
+                        Text("  ")
+                        hexText
+                        lockMarker
+                    }
+                    asciiText
                 }
             }
             .font(.system(.callout, design: .monospaced))
-            .lineLimit(1)
-            .minimumScaleFactor(0.6)
             if !page.readable {
                 Text("Not readable. It may need a password or may not exist.")
                     .font(.caption)

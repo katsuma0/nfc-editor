@@ -30,7 +30,7 @@ The tools other apps sell as a paid upgrade are all here and all free. The memor
 
 Everything you scan or build can be saved on the phone and exported as JSON. Nothing is uploaded anywhere. There is no account, no analytics, and no ads. Light and dark mode follow your iPhone, or pick one in Settings.
 
-Works with NTAG 203, 210, 212, 213, 215, 216 and NTAG I2C, MIFARE Ultralight, Ultralight C and Ultralight EV1, MIFARE DESFire EV1, EV2 and EV3, NTAG 424 DNA, ICODE SLI and SLIX, ST25TV, and FeliCa. Needs an iPhone 7 or newer. iOS cannot read MIFARE Classic data or emulate a tag, so this app does not either.
+Works with NTAG 203, 210, 212, 213, 215, 216 and NTAG I2C, MIFARE Ultralight, Ultralight C and Ultralight EV1, MIFARE DESFire EV1, EV2 and EV3, NTAG 424 DNA, ICODE SLI and SLIX, ST25TV, and FeliCa. Needs iOS 17 or later, so an iPhone XS, XR, SE (2nd generation) or newer. iOS cannot read MIFARE Classic data or emulate a tag, so this app does not either.
 
 ## Keywords (100, comma separated, no spaces)
 

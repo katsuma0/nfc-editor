@@ -35,20 +35,23 @@ On the 1.0 version page, paste from `listing.md`: promotional text, description,
 
 ## 5. Screenshots
 
-Only the 6.9 inch set is required (1320 x 2868). Run the app on the iPhone 17 Pro Max simulator and press Cmd+S on each screen; the files land on the Desktop. Six is plenty:
+Only the 6.9 inch set is required (1320 x 2868). NFC does not work in the simulator and the scan history never leaves the phone, so the two screens that need a real tag come from the iPhone and the rest from the iPhone 17 Pro Max simulator (Cmd+S saves to the Desktop). Six is plenty:
 
-1. Read tab with a few recent scans (scan real tags on the phone first, or use the Saved tab).
-2. Write tab with three records queued.
-3. The Add a record list.
-4. Tools with advanced tools shown.
-5. Memory editor.
-6. Settings in Dark appearance.
+1. On the iPhone: a tag's details after Scan tag for details. Press the side and volume up buttons together.
+2. Simulator: Write tab with three records queued.
+3. Simulator: the Add a record list.
+4. Simulator: Tools with advanced tools shown.
+5. On the iPhone: Memory editor after Read memory on a real tag.
+6. Simulator: Settings with Appearance set to Dark.
+
+If the iPhone is not a 6.9 inch model, its screenshots come out a different size. Open each in Preview, Tools, Adjust Size, untick Scale proportionally, and set 1320 by 2868. Or swap them for the Saved tab with a profile made through Write, Save as profile, which works in the simulator.
 
 ## 6. Privacy, age, price
 
 - App Privacy: Data Not Collected. Privacy policy URL: https://katsuma.ca/nfc-editor/privacy.html. Publish.
 - Age rating: No to every question, 4+.
 - Pricing and Availability: Free. All countries, or Canada only to start.
+- If you pick All countries: App Store Connect, Business, Digital Services Act, declare trader status. A free personal app with no business behind it is a non-trader. Trader means your address, phone and email go on the EU product page. Canada only skips this.
 
 ## 7. App Review
 

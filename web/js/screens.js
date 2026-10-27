@@ -372,7 +372,7 @@ const SCREENS = (() => {
         const toolRow = ([id, title, subtitle, icon, make]) => row({ icon, iconBg: iconColorFor(id), title, subtitle, subtitleWrap: true, onClick: () => ctx.nav.push(make()) });
         const s = STORE.settings;
         wrap.append(section({ rows: EVERYDAY_TOOLS.map(toolRow) }));
-        wrap.append(section({ rows: [buttonRow({ title: s.showAdvancedTools ? 'Hide advanced tools' : 'Show advanced tools', onClick: () => { s.showAdvancedTools = !s.showAdvancedTools; STORE.saveSettings(); ctx.refresh(); } })], footer: s.showAdvancedTools ? null : 'Memory editor, raw commands, dumps, counters, mirroring, page locks, and tools for DESFire, ISO 15693 and FeliCa chips.' }));
+        wrap.append(section({ rows: [buttonRow({ title: s.showAdvancedTools ? 'Hide advanced tools' : 'Show advanced tools', onClick: () => { s.showAdvancedTools = !s.showAdvancedTools; STORE.saveSettings(); ctx.refresh(); } })], footer: s.showAdvancedTools ? null : 'Memory editor, raw commands, dumps, counters, mirroring, page locks, and tools for Ultralight C, DESFire, ISO 15693 and FeliCa chips.' }));
         if (s.showAdvancedTools) for (const g of TOOL_GROUPS) wrap.append(section({ header: g.header, rows: g.tools.map(toolRow), footer: g.footer }));
         return wrap;
       },
@@ -1245,7 +1245,7 @@ const SCREENS = (() => {
       const n = STORE.scans.history.length;
       wrap.append(section({ header: 'Scan history', rows: [
         buttonRow({ icon: 'table', title: 'Export scan log', disabled: !n, onClick: () => UI.download('NFC scan log.csv', STORE.exportScanLogCSV(), 'text/csv') }),
-        buttonRow({ icon: 'trash', title: 'Clear scan history', destructive: true, disabled: !n, onClick: async () => { if (await UI.confirm({ title: 'Clear the scan history?', confirmTitle: 'Clear scan history', destructive: true })) { STORE.clearScans(); ctx.refresh(); } } }),
+        buttonRow({ icon: 'trash', title: 'Clear scan history', destructive: true, disabled: !n, onClick: async () => { if (await UI.confirm({ title: 'Clear the scan history?', confirmTitle: 'Clear scan history', destructive: true })) { STORE.clearScans(); ctx.refresh(); if (app.navs.read) app.navs.read.refreshTop(); } } }),
       ], footer: n === 0 ? 'No scans yet. The last 20 scans are kept until you close the app. Saved tags are not affected.' : `${n === 1 ? '1 scan' : n + ' scans'}. Exports as a spreadsheet with serial number, chip, record count and time.` }));
       wrap.append(section({ rows: [buttonRow({ title: s.showAdvancedSettings ? 'Hide advanced settings' : 'Show advanced settings', onClick: () => { s.showAdvancedSettings = !s.showAdvancedSettings; STORE.saveSettings(); ctx.refresh(); } })] }));
       if (s.showAdvancedSettings) {

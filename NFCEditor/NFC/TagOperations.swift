@@ -432,12 +432,16 @@ enum TagOperations {
         }
     }
 
-    /// A blank DESFire card needs an NDEF application rather than a format, so it gets its own message.
+    /// Format tag only lays out NTAG, Ultralight and ISO 15693 memory, so other chips get their own message.
     private static func notFormatted(_ tag: NFCTag) -> NFCEditorError {
-        if case .miFare(let mifare) = tag, mifare.mifareFamily == .desfire {
+        switch tag {
+        case .miFare(let mifare) where mifare.mifareFamily == .desfire:
             return .noNDEFApplication
+        case .feliCa, .iso7816:
+            return .unsupportedTag("It has no NDEF data area, and this app cannot create one on this chip.")
+        default:
+            return .notNDEFFormatted
         }
-        return .notNDEFFormatted
     }
 
     static func lock(_ session: NFCTagReaderSession, _ tag: NFCTag) async throws {

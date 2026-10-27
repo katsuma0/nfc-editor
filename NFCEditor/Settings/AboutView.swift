@@ -13,6 +13,7 @@ struct AboutView: View {
                     Image(systemName: "wave.3.right.circle.fill")
                         .font(.system(size: 56))
                         .foregroundStyle(Color.accentColor)
+                        .accessibilityHidden(true)
                     Text("NFC Editor")
                         .font(.title2.weight(.semibold))
                     Text("Version \(versionLine)")

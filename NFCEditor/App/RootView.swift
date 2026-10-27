@@ -25,9 +25,13 @@ struct RootView: View {
             Haptics.enabled = app.settings.hapticsEnabled
             applyScreenAwake(app.settings.keepScreenAwake)
             applyAppearance(app.settings.appearance)
+            SettingsView.removeScanLogFile()
         }
         .onChange(of: app.settings.appearance) { _, newValue in
             applyAppearance(newValue)
+        }
+        .onChange(of: app.settings.verifyAfterWrite) { _, newValue in
+            app.writeQueue.options.verifyAfterWrite = newValue
         }
         .onChange(of: app.settings.hapticsEnabled) { _, newValue in
             Haptics.enabled = newValue

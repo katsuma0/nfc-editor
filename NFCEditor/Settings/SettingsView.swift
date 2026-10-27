@@ -23,7 +23,7 @@ struct SettingsView: View {
                     Toggle("Haptic feedback", isOn: $settings.hapticsEnabled)
                     Toggle("Keep screen awake", isOn: $settings.keepScreenAwake)
                 } footer: {
-                    Text("Verify reads the tag back after every write and checks that each byte landed.")
+                    Text("Verify reads the tag back after each write from the Write tab and checks that every byte landed. Copying a tag and writing a saved tag always verify.")
                 }
 
                 scanHistorySection
@@ -96,6 +96,9 @@ struct SettingsView: View {
             .onChange(of: app.scanHistory, initial: true) { _, _ in
                 scanLogURL = writeScanLog()
             }
+            .onDisappear {
+                SettingsView.removeScanLogFile()
+            }
             .onChange(of: language) { _, newValue in
                 let cleaned = String(newValue.lowercased().filter { $0.isASCII && $0.isLetter }.prefix(2))
                 if cleaned != newValue {
@@ -117,8 +120,10 @@ struct SettingsView: View {
                     Label("Export scan log", systemImage: "tablecells")
                 }
             } else {
-                Label("Export scan log", systemImage: "tablecells")
-                    .foregroundStyle(.secondary)
+                Button {} label: {
+                    Label("Export scan log", systemImage: "tablecells")
+                }
+                .disabled(true)
             }
             Button(role: .destructive) {
                 showingClearHistory = true
@@ -150,11 +155,23 @@ struct SettingsView: View {
         }
     }
 
+    private static var scanLogFileURL: URL {
+        FileManager.default.temporaryDirectory.appendingPathComponent("NFC scan log.csv")
+    }
+
+    /// The CSV only exists while Settings is open, so serial numbers never outlive the in-memory history.
+    static func removeScanLogFile() {
+        try? FileManager.default.removeItem(at: scanLogFileURL)
+    }
+
     /// ShareLink needs a file up front, so the CSV is rewritten whenever the scan history changes.
     @MainActor
     private func writeScanLog() -> URL? {
-        guard !app.scanHistory.isEmpty else { return nil }
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("NFC scan log.csv")
+        let url = SettingsView.scanLogFileURL
+        guard !app.scanHistory.isEmpty else {
+            SettingsView.removeScanLogFile()
+            return nil
+        }
         do {
             try Data(app.exportScanLogCSV().utf8).write(to: url, options: .atomic)
             return url
